@@ -11,6 +11,7 @@ CREATE TABLE td_customers
     create_date TIMESTAMP DEFAULT NOW() NOT NULL
 );
 
+-- DBMAKE: SEPARATOR
 
 -- DBMAKE: MIGRATE DOWN
 DROP TABLE td_customers;

@@ -5,32 +5,36 @@ Also the module contains the HELP string describes how to use the utility.
 __author__ = 'splanger'
 
 HELP_STRING = """
-dbmake - database management utility
+dbmake - Database Schema Migration Tool
 
-Usage:
     dbmake [options] [action]
 
+Note: Values for options are passed as follows: -<short option name> <value> or --<long option name>=<value>
 Options:
-     -h, --help                   Prints this help dialog
-     -m, --schema-migrations-dir  Schema migration directory (optional). The working directory will be used by default.
-
-     -H, --host         Database server host
-     -U, --username     Username to connect with to a database
-     -W, --password     Password to a database for a given username
-     -d, --dbname       Database name to connect to
+    -h, --help                     Prints the help dialog
+    -m, --schema-migrations-dir    Schema migration directory (optional). The working directory will be used by default.
+    -c, --config-file              Options file to load
+    -H, --host                     Database server host
+    -U, --username                 Username to connect with to a database
+    -W, --password                 Force password prompt for database connection
+    -d, --dbname                   Database name to connect to
+    -D, --dry-run                  Dry run (print commands, but do not execute)
 
 Action:
-     db:init             Initializes migration subsystem for an already existing database
-     db:create           Create new empty database(s) and initializes migrations subsystem.
-                         Use additional option --drop-existing to drop current database if exists
-     db:migrate          Update DB schema using migration files (options: VERSION=x)
-     db:reset            This will drop the database, recreate it and load the current schema into it.
-     db:rollback         Rolls the schema back to the previous version (specify steps w/ STEP=n)
-     db:migrate:status   Display status of migrations
-     db:version          Retrieves the current schema version number
+     db:init               Initializes migration subsystem for already existing database
+     db:forget             Removes migration subsystem from database
+     db:create             Creates new empty database(s) and initializes migrations subsystem.
+     db:migrate            Update DB schema using migration files to specified version (with option: VERSION=x)
+     db:reset              This will drop the database, recreate it and load the current schema into it.
+     db:rollback           Rolls the schema back to the previous version (it is possible to specify the number of rollback steps w/ STEP=n)
+     db:migrate:status     Display status of migrations
+     db:version            Retrieves the current schema version number
+     db:generate:doc       Generates database documentation based on documentation in migration files.
+     db:generate:migration Generates a new template migration file.
 """
 
 import sys
+import getpass
 
 
 class Options:
@@ -41,6 +45,7 @@ class Options:
     db_user = None
     db_password = None
     db_name = None
+    drop_existing = False
     migrations_dir = None
     action = None
     print_help = False
@@ -80,13 +85,17 @@ class Options:
                     self.db_user = args[0].split('=')[1]
                     args.pop(0)
 
-                elif (args[0] == '-W' or args[0] == '--password') and len(args) >= 2:
+                elif args[0] == '-W' or args[0] == '--password':
                     args.pop(0)
-                    self.db_password = args.pop(0)
-
-                elif args[0].startswith('--password='):
-                    self.db_password = args[0].split('=')[1]
-                    args.pop(0)
+                    #self.db_password = args.pop(0)
+                    self.db_password = getpass.getpass()
+                    #print "Entered password: " + self.db_password
+                    #sys.exit(0)
+                    """
+                    elif args[0].startswith('--password='):
+                        self.db_password = args[0].split('=')[1]
+                        args.pop(0)
+                    """
 
                 elif (args[0] == '-d' or args[0] == '--dbname') and len(args) >= 2:
                     args.pop(0)
@@ -96,13 +105,16 @@ class Options:
                     self.db_name = args[0].split('=')[1]
                     args.pop(0)
 
+                elif args[0] == '--drop-existing':
+                    args.pop(0)
+                    self.drop_existing = True
+
                 # Action
-                elif args[0] == 'db:init':
+                elif args[0] == 'db:init' or \
+                   args[0] == 'db:forget' or \
+                   args[0] == 'db:create' or \
+                   args[0] == 'db:migrate':
                     self.action = args.pop(0)
-                    """if (len(args)>0) and (not args[0].startswith('-')):
-                        options.migration_ver = args.pop(0)
-                    else:
-                        options.migration_ver = '99999999_0'"""
 
                 else:
                     self.print_help = True
