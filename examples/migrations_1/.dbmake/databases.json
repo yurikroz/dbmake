@@ -1,0 +1,18 @@
+[
+    {
+        "connection_name": "testdb", 
+        "dbname": "db_1", 
+        "host": "54.68.72.64", 
+        "password": "dd123a1a2", 
+        "port": "5432", 
+        "user": "splanger"
+    }, 
+    {
+        "connection_name": "testdb_2", 
+        "dbname": "testdb", 
+        "host": "54.68.72.64", 
+        "password": "dd123a1a2", 
+        "port": "5432", 
+        "user": "splanger"
+    }
+]

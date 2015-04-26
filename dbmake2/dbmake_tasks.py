@@ -1,10 +1,10 @@
-__author__ = 'splanger'
-
-import psycopg2
 import logging
 import sys
 import os
 import traceback
+
+import psycopg2
+
 from dbmake_cli import Options
 
 
@@ -14,7 +14,7 @@ class DbmakeException(Exception):
 
 class ExecutableTask:
     """
-    Base class for all dbmake executable tasks
+    Base class for all dbmake.sh executable tasks
     """
 
     def __init__(self, options):
@@ -30,7 +30,7 @@ class ExecutableTask:
 
 class TasksFactory:
     """
-    Use this class statically to create dbmake tasks instances with this class
+    Use this class statically to create dbmake.sh tasks instances with this class
     """
     def __init__(self):
         pass
@@ -38,10 +38,10 @@ class TasksFactory:
     @classmethod
     def create_task(cls, options):
         """
-        Creates dbmake task according to passed options
+        Creates dbmake.sh task according to passed options
         @param options: Options
         @raise DbmakeException
-        @return: ExecutableTask dbmake task instance according to options.action value
+        @return: ExecutableTask dbmake.sh task instance according to options.action value
         """
         if options.action == "db:init":
             return DbInit(options)
@@ -55,9 +55,28 @@ class TasksFactory:
             raise DbmakeException('Unknown requested action name "' + options.action + '"')
 
 
+class Init(ExecutableTask):
+    """
+    Initiates dbmake subsystem within a current or a specified directory, if has not initiated yet
+
+    Usage: dbmake init [(-m | --migrations-dir <path>)] <connection name> (parameters)
+
+    Connection parameters:
+        -h <host>, --host <host>  Database host name
+        -u <host>, --user <host> Database user name to connect with
+        -(-u | --user) <user> -d <db name>
+    """
+
+    def execute(self):
+        pass
+
+    def print_help(self):
+        print help(self)
+
+
 class DbInit(ExecutableTask):
     """
-    Initializes dbmake subsystem for a database according to specified options
+    Initializes dbmake.sh subsystem for a database according to specified options
     """
     MIGRATIONS_TABLE_NAME = "_dbmake_migrations"
 
@@ -137,7 +156,7 @@ class DbInit(ExecutableTask):
 
 class DbForget(ExecutableTask):
     """
-    Makes dbmake to remove its subsystem from specified database
+    Makes dbmake.sh to remove its subsystem from specified database
     """
     MIGRATIONS_TABLE_NAME = "_dbmake_migrations"
 
