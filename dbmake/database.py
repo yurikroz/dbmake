@@ -26,9 +26,21 @@ class DbConnectionConfig:
     def save(self, config_file, connection_to_update=None):
         """
         Adds current connection in a config_file.
-        :param config_file: str
+        :param config_file: str A full path to a config file
         :param connection_to_update: Name of a connection in config file you want to update its details
         """
+
+        def create_config_file(file_, content_):
+            print "Create config file... ",
+            try:
+                f_ = open(file_, 'w+')
+            except IOError as e_:
+                print "Failure"
+                print e_.message.decode()
+                return False
+            else:
+                with f_:
+                    f_.write(content_)
 
         # Convert configuration instance into a string
         connections_list = [self]
@@ -37,32 +49,13 @@ class DbConnectionConfig:
         print "Check if dbmake config file exists... ",
 
         if not os.path.exists(config_file):
+            # Create dbmake configuration file if such not exists
             print "Not exists"
+            create_config_file(config_file, config_string)
 
-            # Create dbmake configuration file
-            try:
-                print "Create config file... ",
-                f = open(config_file, 'w+')
-                print "OK"
-            except IOError as e:
-                msg = e.message()
-                print "Failure"
-                print msg
-                return False
-
-            f.write(config_string)
-            f.close()
         else:
             print "Exists"
-            try:
-                f = open(config_file, 'r')
-            except IOError as e:
-                msg = e.message()
-                print "Failure"
-                print msg
-                return False
-            connections_list = json.load(f)
-            f.close()
+            connections_list = self.connections_list(config_file)
 
             print "Check if such connection is already exists... ",
 
@@ -84,15 +77,14 @@ class DbConnectionConfig:
             try:
                 f = open(config_file, 'w+')
             except IOError as e:
-                msg = e.message()
                 print "Failure"
-                print msg
+                print e.message.decode()
                 return False
-
-            connections_list.append(self)
-            config_string = json.dumps(connections_list, default=lambda o: o.__dict__, sort_keys=True, indent=4)
-            f.write(config_string)
-            f.close()
+            else:
+                with f:
+                    connections_list.append(self)
+                    config_string = json.dumps(connections_list, default=lambda o: o.__dict__, sort_keys=True, indent=4)
+                    f.write(config_string)
 
             print "OK"
 
@@ -107,6 +99,91 @@ class DbConnectionConfig:
         :param connection_name: str
         """
         # TODO: Implement
+
+
+    @staticmethod
+    def connections_list(config_file):
+        """
+        Reads a database connections configuration file and returns a list
+        of database connections as a list of dictionaries
+        :param config_file: A full path to a config file
+        :return: List of dictionaries or False on failure
+        """
+        try:
+            f = open(config_file, 'r')
+        except IOError as e:
+            print e.message.decode()
+            return False
+        else:
+            with f:
+                connections_list = json.load(f)
+
+        return connections_list
+
+    @classmethod
+    def read(cls, config_file, connection_name):
+        """
+        Reads a connection details from a config_file and
+        returns them as DbConnectionConfig instance.
+        In case of failure returns False
+
+        :param config_file: str
+        :param connection_name: str
+        """
+
+        # Check if dbmake config file exists...
+        if not os.path.exists(config_file):
+            return False
+
+        connections_list = cls.connections_list(config_file)
+
+        if connections_list is False:
+            return False
+
+        for connection in connections_list:
+            if connection["connection_name"] == connection_name:
+                return DbConnectionConfig(
+                    connection["host"],
+                    connection["dbname"],
+                    connection["user"],
+                    connection["password"],
+                    connection["connection_name"],
+                    connection["port"]
+                )
+
+        return False
+
+    @classmethod
+    def read_all(cls, config_file):
+        """
+        Reads all connections details from a config_file and returns them as a list of DbConnectionConfig
+        instances. In case of failure returns False
+
+        :param config_file: str
+        """
+
+        # Check if dbmake config file exists...
+        if not os.path.exists(config_file):
+            return False
+
+        connections_list = cls.connections_list(config_file)
+
+        if connections_list is False:
+            return False
+
+        connections_list_instances = []
+        for connection in connections_list:
+            connections_list_instances.append(DbConnectionConfig(
+                connection["host"],
+                connection["dbname"],
+                connection["user"],
+                connection["password"],
+                connection["connection_name"],
+                connection["port"]
+                )
+            )
+
+        return connections_list_instances
 
 
 class BaseDbAdapter:
@@ -142,8 +219,28 @@ class BaseDbAdapter:
         """
         raise NotImplementedError
 
+    def execute_string(self, sql_string, cursor_factory=None):
+        raise NotImplementedError
+
     def get_cursor(self):
         raise NotImplementedError
+
+
+class DbAdapterFactory:
+    """
+    Use this class statically to create database adapters based on db_connection_config
+    """
+    def __init__(self):
+        pass
+
+    @classmethod
+    def create(cls, db_connection_config):
+        """
+        :return: BaseDbAdapter
+        """
+
+        # For sake of first project version only PostgreSQL support is provided
+        return PgAdapter(db_connection_config)
 
 
 class PgAdapter(BaseDbAdapter):
@@ -165,28 +262,62 @@ class PgAdapter(BaseDbAdapter):
         )
         self._connection = psycopg2.connect(conn_string)
 
+    def disconnect(self):
+        self._connection.close()
+
     def query(self, sql_string, cursor_factory=None):
+        """
+        Executes an SQL query and returns a cursor that a result can be fetched from
+        :param sql_string:
+        :param cursor_factory:
+        :return: Cursor
+        """
         cur = self.get_cursor(cursor_factory)
         cur.execute(sql_string)
         return cur
 
-    def execute_string(self, sql_string, cursor_factory=None):
-        cur = self.get_cursor(cursor_factory)
-        cur.execute(sql_string)
+    def execute_string(self, sql_string, cur_factory=None):
+        """
+        Executes an SQL query and commits it
+        :param sql_string:
+        :param cur_factory:
+        """
+        with self._connection.cursor(cursor_factory=cur_factory) as cur:
+            cur.execute(sql_string)
+            self._connection.commit()
+
+    def commit(self):
         self._connection.commit()
 
     def fetch_dict(self, sql_string):
         """
-        Executes an SQL string and returns the result as a list of dictionary
-        instances representing records
+        Executes an SQL string and returns the result as a list of dictionary instances,
+        each one is representing a record
         :param sql_string: str
         """
-        cur = self.query(sql_string, cursor_factory=psycopg2.extras.DictCursor)
-        result = cur.fetchall()
+        with self._connection.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute(sql_string)
+            result = cur.fetchall()
+
         records = []
         for row in result:
             records.append(dict(row))
+
         return records
+
+    def fetch_single_dict(self, sql_string):
+        """
+        Executes an SQL string and returns tthe only record represented by dictionary
+        :param sql_string: str
+        """
+        with self._connection.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute(sql_string)
+            result = cur.fetchone()
+
+        if result is not None:
+            return dict(result)
+
+        return None
 
     def get_cursor(self, cur_factory=None):
         if cur_factory is None:
@@ -195,10 +326,22 @@ class PgAdapter(BaseDbAdapter):
             return self._connection.cursor(cursor_factory=cur_factory)
 
     def get_tables(self):
+        """
+        Returns a list of "BASE TABLE"s names in "public" schema of a database that
+        the adapter's connection is associated with
+        """
         query = """
         SELECT table_name
         FROM information_schema.tables
         WHERE table_schema='public'
         AND table_type='BASE TABLE'
         """
-        return self.fetch_dict(query)
+        with self._connection.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute(query)
+            result = cur.fetchall()
+
+        records = []
+        for row in result:
+            records.append(dict(row)["table_name"])
+
+        return records

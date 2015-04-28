@@ -2,155 +2,99 @@ import logging
 import sys
 import os
 import traceback
-
 import psycopg2
-
-from dbmake_cli import Options
-
-
-class DbmakeException(Exception):
-    pass
+from common import DbmakeException, MIGRATIONS_TABLE
+from database import DbConnectionConfig, DbAdapterFactory
 
 
 class ExecutableTask:
     """
     Base class for all dbmake.sh executable tasks
     """
+    db_connection_config = None
 
-    def __init__(self, options):
+    def __init__(self, db_connection_config):
         """
-        :type options: Options
-        :type dbconnection:
+        :type db_connection_config: database.DbConnectionConfig
         """
-        self.options = options
+        self.db_connection_config = db_connection_config
 
     def execute(self):
         raise NotImplementedError
 
 
-class TasksFactory:
+class DbTasksFactory:
     """
-    Use this class statically to create dbmake.sh tasks instances with this class
+    Use this class statically to create database tasks instances
     """
     def __init__(self):
         pass
 
     @classmethod
-    def create_task(cls, options):
-        """
-        Creates dbmake.sh task according to passed options
-        @param options: Options
-        @raise DbmakeException
-        @return: ExecutableTask dbmake.sh task instance according to options.action value
-        """
-        if options.action == "db:init":
-            return DbInit(options)
-        elif options.action == "db:forget":
-            return DbForget(options)
-        elif options.action == "db:create":
-            return DbCreate(options)
-        elif options.action == "db:migrate":
-            return DbMigrate(options)
+    def create(cls, task_name, db_connection_config, db_adapter=None):
+
+        if task_name == "init":
+            return DbInit(db_connection_config, db_adapter)
         else:
-            raise DbmakeException('Unknown requested action name "' + options.action + '"')
-
-
-class Init(ExecutableTask):
-    """
-    Initiates dbmake subsystem within a current or a specified directory, if has not initiated yet
-
-    Usage: dbmake init [(-m | --migrations-dir <path>)] <connection name> (parameters)
-
-    Connection parameters:
-        -h <host>, --host <host>  Database host name
-        -u <host>, --user <host> Database user name to connect with
-        -(-u | --user) <user> -d <db name>
-    """
-
-    def execute(self):
-        pass
-
-    def print_help(self):
-        print help(self)
+            raise DbmakeException('Unknown task name "' + task_name + '"')
 
 
 class DbInit(ExecutableTask):
     """
-    Initializes dbmake.sh subsystem for a database according to specified options
+    Initiates dbmake necessary table/s within a database
     """
-    MIGRATIONS_TABLE_NAME = "_dbmake_migrations"
 
-    def __init__(self, options, dbconnection=None):
-        ExecutableTask.__init__(self, options)
+    db_adapter = None
 
-        if dbconnection is None:
-            # Initialize database connection
-            conn_string = "host='" + options.db_host + "' dbname='" + options.db_name + "' user='" + \
-                          options.db_user + "' password='" + options.db_password + "'"
+    def __init__(self, db_connection_config, db_adapter=None):
+        """
+        :param db_connection_config: database.DbConnectionConfig
+        """
+        ExecutableTask.__init__(self, db_connection_config)
 
-            # Connect to database
-            try:
-                dbconnection = psycopg2.connect(conn_string)
-            except psycopg2.ProgrammingError as e:
-                msg = e.message.decode()
-                print "Failed to connect to database server with specified parameters.\n"
-                sys.exit(1)
-
-        self.dbconnection = dbconnection
+        if db_adapter is None:
+            self.db_adapter = DbAdapterFactory.create(db_connection_config)
+        else:
+            self.db_adapter = db_adapter
 
     def execute(self):
-        """
-        Initializes migration subsystem in specified database.
-        """
-        logging.info("db:init BEGIN")
-        print "db:init BEGIN"
+        print "DbInit START"
 
-        def _create_migrations_table(dbconnection):
+        def _create_migrations_table(db_adapter):
             query = """
             CREATE TABLE %s (
-                id      SERIAL,
-                version character varying(100) NOT NULL,
-                file    character varying(100),
+                id SERIAL,
+                revision character varying(100) NOT NULL,
+                migration_name character varying(100),
                 create_date TIMESTAMP DEFAULT NOW() NOT NULL
             )
-            """ % self.MIGRATIONS_TABLE_NAME
+            """ % MIGRATIONS_TABLE
+            self.db_adapter.execute_string(query)
 
-            cur = dbconnection.cursor()
-            cur.execute(query)
-            dbconnection.commit()
+        if self._is_migration_table_exists() is True:
+            print "Error! Migrations table is already exists"
+            print "DbInit FINISH"
+            return False
 
-            query = "INSERT INTO " + self.MIGRATIONS_TABLE_NAME + " (version) VALUES (1)"
-            cur.execute(query)
-            dbconnection.commit()
+        print "Creating migrations table"
+        _create_migrations_table(self.db_adapter)
+        print "DbInit FINISH"
 
-        if self._is_db_initialized() is True:
-            logging.info("- Migrations table is already exists, the database is already initialized")
-            print "- Migrations table is already exists, the database is already initialized"
-        else:
-            logging.info("- Creating migrations table")
-            print "- Creating migrations table"
-            _create_migrations_table(self.dbconnection)
+        return True
 
-        logging.info("db:init FINISH")
-        print "db:init FINISH"
-
-    def _is_db_initialized(self):
+    def _is_migration_table_exists(self):
         """
-        Checks if the database is already initialized
-
+        Checks if the migrations table is already exists
         :returns Boolean
         """
-
-        cursor = self.dbconnection.cursor()
-
-        query = "SELECT * FROM information_schema.tables " \
-                + "WHERE table_name='%s'" % self.MIGRATIONS_TABLE_NAME
-
-        cursor.execute(query)
+        cursor = self.db_adapter.get_cursor()
+        cursor.execute(
+            "SELECT * FROM information_schema.tables WHERE table_name=%s",
+            (MIGRATIONS_TABLE,)
+        )
 
         if cursor.rowcount == 0:
             return False
-
         return True
 
 
@@ -367,6 +311,7 @@ class DbCreate(ExecutableTask):
 
 
         self.dbconnection.commit()
+
 
 class DbMigrate(ExecutableTask):
     def execute(self):

@@ -1,16 +1,21 @@
 
-ZERO_MIGRATION_NAME = "0_initial_migration.sql"
+ZERO_MIGRATION_NAME = "initial_migration"
+ZERO_MIGRATION_FILE_NAME = "0_" + ZERO_MIGRATION_NAME + ".sql"
 DBMAKE_CONFIG_DIR = ".dbmake"
 DBMAKE_CONFIG_FILE = "databases.json"
-MIGRATIONS_TABLE_NAME = "_dbmake_migrations"
+MIGRATIONS_TABLE = "_dbmake_migrations"
 
 FAILURE = 1
 SUCCESS = 0
 
 
-class BadCommandArguments(BaseException):
+class DbmakeException(Exception):
     pass
 
 
-class CommandNotExists(BaseException):
+class BadCommandArguments(DbmakeException):
+    pass
+
+
+class CommandNotExists(DbmakeException):
     pass
