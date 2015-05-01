@@ -49,6 +49,5 @@ class App:
 
         return result
 
-
 if __name__ == "__main__":
     sys.exit(App.run(sys.argv))

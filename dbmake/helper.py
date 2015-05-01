@@ -1,6 +1,16 @@
-import sys
 import pyclbr
-import importlib
+import re
+
+
+def find_string_between(s, start, end):
+    """
+    Returns a substring between two other substrings
+    :param s: Text
+    :param start: A substring to start extracting the desired substring from
+    :param end: A substring to stop extracting the desired substring on
+    :return:
+    """
+    return re.search('%s(.*)%s' % (start, end), s).group(1)
 
 
 def underscore_to_camelcase(s):

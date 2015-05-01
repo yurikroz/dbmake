@@ -53,6 +53,8 @@ class Init(BaseCommand):
         BaseCommand.__init__(self, args)
 
     def execute(self):
+        if self.migrations_dir is None:
+            self.migrations_dir = os.path.abspath(os.getcwd())
 
         if self.db_pass is None:
             self.db_pass = getpass.getpass("Enter database password: ")
@@ -98,27 +100,25 @@ class Init(BaseCommand):
 
         remove_zero_migration_file_on_failure = False
 
+        # Get database tasks factory
+        db_tasks_factory = db_tasks.AbstractDbTasksFactory.create(database.DbType.POSTGRES)
+
         if not os.path.exists(zero_migration_file):
-            # Dump initial database structure into ZERO-MIGRATION (initial migration) file
-            result = os.system(
-                'PGPASSWORD="%s" pg_dump -U %s -h %s -s -x -c -E LATIN1 -c -d %s -p %s -f %s' % (
-                    self.db_connection_config.password,
-                    self.db_connection_config.user,
-                    self.db_connection_config.host,
-                    self.db_connection_config.dbname,
-                    self.db_connection_config.port,
-                    zero_migration_file
-                )
+            dump_zero_migration_task = db_tasks_factory.create(
+                db_tasks.DbTaskType.DUMP_ZERO_MIGRATION,
+                self.db_connection_config,
+                db_adapter
             )
+            result = dump_zero_migration_task.execute(zero_migration_file)
 
-            remove_zero_migration_file_on_failure = True
-
-            if result != SUCCESS:
+            if not result:
                 print "Failed to dump database schema into ZERO-MIGRATION file."
                 return FAILURE
 
+            remove_zero_migration_file_on_failure = True
+
         # Initialize dbmake migrations table
-        init_task = db_tasks.DbTasksFactory.create('init', self.db_connection_config, db_adapter)
+        init_task = db_tasks_factory.create(db_tasks.DbTaskType.INIT, self.db_connection_config, db_adapter)
         result = init_task.execute()
 
         if not result:
@@ -148,12 +148,24 @@ class Init(BaseCommand):
         if remove_zero_migration_file_on_failure:
             # Create new migration record
             migration_vo = migrations.MigrationVO()
-            migration_vo.revision = "0"
+            migration_vo.revision = 0
             migration_vo.migration_name = ZERO_MIGRATION_NAME
 
             # Save the new migration record
             migration_dao = migrations.MigrationsDao(db_adapter)
             migration_dao.create(migration_vo)
+        else:
+            # Apply MIGRATION-ZERO on the newly initialized database
+            # migrations_manager = migrations.MigrationsManager(
+            #    self.migrations_dir,
+            #    db_adapter
+            # )
+            migrations_manager = migrations.MigrationsManager(self.migrations_dir)
+            result = migrations_manager.migrate_to_revision(0)
+
+            if result is False:
+                print "Error! Failed to apply MIGRATION-ZERO."
+                return FAILURE
 
         return SUCCESS
 
@@ -162,8 +174,6 @@ class Init(BaseCommand):
         Creates a dbmake config directory within migrations folder if it yet doesn't exist.
         :return: Returns True on success, otherwise returns False
         """
-        if self.migrations_dir is None:
-            self.migrations_dir = os.path.abspath(os.getcwd())
 
         print "Check if .dbmake directory does not exist in: %s ..." % self.migrations_dir,
 
@@ -298,10 +308,14 @@ class Init(BaseCommand):
 
 class Migrate(BaseCommand):
 
+    _MIGRATE_UP = "up"
+    _MIGRATE_DOWN = "down"
     connection_name = None
-    db_connection_config = None
     migrations_dir = None
-    target_migration = None
+    target_revision = None
+    dry_run = False
+    migration_direction = _MIGRATE_UP
+    migration_steps = None
 
     def __init__(self, args=[]):
         BaseCommand.__init__(self, args)
@@ -311,69 +325,218 @@ class Migrate(BaseCommand):
         if self.migrations_dir is None:
             self.migrations_dir = os.path.abspath(os.getcwd())
 
-        dbmake_config_file = self.migrations_dir + os.sep + DBMAKE_CONFIG_DIR + os.sep + DBMAKE_CONFIG_FILE
+        # Get database connection\s configurations
+        connections_configs = []
+        if self.connection_name is not None:
+            config_file = self.migrations_dir + os.sep + DBMAKE_CONFIG_DIR + os.sep + DBMAKE_CONFIG_FILE
+            connections_configs.append(database.DbConnectionConfig.read(config_file, self.connection_name))
+        else:
+            config_file = self.migrations_dir + os.sep + DBMAKE_CONFIG_DIR + os.sep + DBMAKE_CONFIG_FILE
+            connections_configs = database.DbConnectionConfig.read_all(config_file)
+
+        if connections_configs is False or connections_configs[0] is False:
+            print "Failed to read config file"
+            return FAILURE
+
+        migrations_manager = migrations.MigrationsManager(self.migrations_dir)
+        revisions = migrations_manager.revisions()
+
+        for db_connection_config in connections_configs:
+
+            # If migration direction is UP and a schema has no migration yet
+            # then the ZERO-MIGRATION must be applied first before applying
+            # following migrations
+            apply_zero_migration = False
+
+            try:
+                db_adapter = database.DbAdapterFactory.create(db_connection_config)
+            except psycopg2.OperationalError as e:
+                print "%s: Failed to connect database %s on host %s:%s, user: %s" % (
+                    db_connection_config.connection_name,
+                    db_connection_config.db_name,
+                    db_connection_config.host,
+                    db_connection_config.port,
+                    db_connection_config.user
+                )
+                print e.message.decode()
+                continue
+
+            migrations_dao = migrations.MigrationsDao(db_adapter)
+
+            if migrations_dao.is_migration_table_exists() is True:
+
+                # Find current migration
+                recent_migration_vo = migrations_dao.find_most_recent()
+                current_revision = int(recent_migration_vo.revision)
+
+                # Find target revision
+                if self.target_revision is None and self.migration_steps is None:
+                    target_revision = migrations_manager.latest_revision()
+
+                elif self.target_revision is not None:
+                    target_revision = self.target_revision
+
+                    if not migrations_manager.is_revision_exists(target_revision):
+                        print "Error! Target revision's migration file %s was not found!" % target_revision
+                        return FAILURE
+
+                elif self.migration_steps is not None:
+
+                    if current_revision not in revisions:
+                        print "%s: Error! Current revision's migration wasn't found." % db_connection_config.connection_name
+                        return FAILURE
+                    else:
+                        current_index = revisions.index(current_revision)
+
+                        if (
+                            self.migration_direction == self._MIGRATE_UP
+                            and (current_index + self.migration_steps) >= len(revisions)
+                        ):
+                            # If number of steps exceed size of revisions list, and migration direction is UP,
+                            # then set target revision to the latest one
+                            target_revision = revisions[-1]
+                        elif (
+                            self.migration_direction == self._MIGRATE_DOWN
+                            and (current_index - self.migration_steps) < 0
+                        ):
+                            # If number of steps exceed the zero index of a revisions list, and migration
+                            # direction is DOWN, then set target revision to the latest one
+                            target_revision = 0
+                        elif self.migration_direction == self._MIGRATE_UP:
+                            target_revision = revisions[current_index + self.migration_steps]
+                        elif self.migration_direction == self._MIGRATE_DOWN:
+                            target_revision = revisions[current_index - self.migration_steps]
+                        else:
+                            print "%s: Error! Can't define target revision" % db_connection_config.connection_name
+                            return FAILURE
+
+                # Migrate...
+                print "%s: Migrating... (target revision:  %s)" % (
+                    db_connection_config.connection_name,
+                    target_revision
+                )
+                migrations_manager.migrate_to_revision(target_revision, db_adapter)
+                print "-" * 20
+            else:
+                print "%s: Error! No migrations table has been found." % db_connection_config.connection_name
+
+            db_adapter.disconnect()
 
         return SUCCESS
+
+    def _target_revision(self, revisions, current_revision):
+        """
+        Returns a Target Revision for current connection
+        :param revisions:
+        :param current_revision:
+        :return:
+        """
+        # TODO: Implement _target_revision()
+        pass
 
     @staticmethod
     def print_help():
         # --no-dump               Don't dump database structure into ZERO MIGRATION file
         print """
-        usage: dbmake migrate [(-m | --migrations-dir) <path>] <connection name> (options) [OPTIONAL]
+        usage: dbmake migrate [options] [(--up | --down) <steps> | (-r | --revision=)<value>]
 
         Note:
-        <connection name> is used to refer to database connection parameters.
+        This command will perform database migration according to passed options.
+        By default, if no options are specified, the command will migrate all databases
+        in the %s file that resides in %s folder within migrations directory.
 
         Optional:
-            -m, --migrations-dir    Where migrations reside
-            -p, --port              Database server port
-            -P, --password          Database username password
-
-        Required options:
-            -h, --host      Database server host
-            -d, --dbname    Database name
-            -u, --user      Database username
-        """
+            -d, --dry-run                         Dry run (print commands, but do not execute)
+            -m <path>, --migrations-dir=<path>    Where migrations reside
+            -c <name>, --connection=<name>        Connection name of a database to migrate
+            -r <value>, --revision=<value>        Number of revision to migrate to
+            --up=<steps>                          Number of revisions to migrate UP
+            --down=<steps>                        Number of revisions to migrate DOWN (rollback)
+        """ % (DBMAKE_CONFIG_FILE, DBMAKE_CONFIG_DIR)
 
     def _parse_options(self, args):
-        if len(args) == 0:
-            raise BadCommandArguments
 
-        # Parse optional [(-m | --migrations-dir) <path>]
-        if args[0] == '-m' or args[0] == '--migrations-dir':
-            if len(args) < 2:
+        options = ['-m', '--migration-dir', '--migrations-dir=', '-c',
+                   '--connection', '--connection=', '-r', '--revision', '--revision=',
+                   '--up', '--up=', '--down', '--down=', '-d', '--dry-run']
+
+        while len(args) > 0:
+            # Parse optional [(-m | --migrations-dir) <path>]
+            if args[0] == '-m' or args[0] == '--migrations-dir':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.migrations_dir = str(args.pop(0))
+
+            elif args[0].startswith("--migrations-dir="):
+                self.migrations_dir = str(args[0].split('=')[1])
+                args.pop(0)
+
+            # Parse optional [(c | --connection)]
+            elif args[0] == '-c' or args[0] == '--connection':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.connection_name = str(args.pop(0))
+
+            elif args[0].startswith("--connection="):
+                self.connection_name = str(args[0].split('=')[1])
+                args.pop(0)
+
+            # Parse optional [(r | --revision)]
+            elif args[0] == '-r' or args[0] == '--revision':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.target_revision = abs(int(args.pop(0)))
+
+            elif args[0].startswith("--revision="):
+                self.target_revision = abs(int(args[0].split('=')[1]))
+                args.pop(0)
+
+            # Parse optional [--up=<steps>]
+            elif args[0] == '--up':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.migration_direction = self._MIGRATE_UP
+                self.migration_steps = abs(int(args.pop(0)))
+
+            elif args[0].startswith("--up="):
+                self.migration_direction = self._MIGRATE_UP
+                self.migration_steps = abs(int(args[0].split('=')[1]))
+                args.pop(0)
+
+            # Parse optional [--down=<steps>]
+            elif args[0] == '--down':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.migration_direction = self._MIGRATE_DOWN
+                self.migration_steps = abs(int(args.pop(0)))
+
+            elif args[0].startswith("--down="):
+                self.migration_direction = self._MIGRATE_DOWN
+                self.migration_steps = abs(int(args[0].split('=')[1]))
+                args.pop(0)
+
+            # Parse optional [(-d | --dry-run)]
+            elif args[0] == '-d' or args[0] == '--dry-run':
+                args.pop(0)
+                self.dry_run = True
+
+            elif args[0] not in options:
                 raise BadCommandArguments
-            args.pop(0)
-            self.migrations_dir = str(args.pop(0))
-
-        elif args[0].startswith("--migrations-dir="):
-            self.migrations_dir = str(args[0].split('=')[1])
-            args.pop(0)
-
-        # Parse required <connection name>
-        if len(args) == 0:
-            raise BadCommandArguments
-        else:
-            self.connection_name = args.pop(0)
 
         # Parse all the remaining necessary options
-        while len(args) > 0:
-            args.pop(0)
+        if len(args) > 0:
+            raise BadCommandArguments
 
         print self.__repr__()
 
-        # Create DbConnectionConfig from parsed arguments
-        if (
-            self.db_host is None
-            or self.db_name is None
-            or self.db_user is None
-            or self.connection_name is None
-        ):
-            raise BadCommandArguments
-
     def __repr__(self):
-        return "dbhost=%s, dbuser=%s dbname=%s dbpass=%s, conn_name=%s" % (
-            self.db_host, self.db_user, self.db_name, self.db_pass, self.connection_name
+        return "conn_name=%s, migration_direction=%s, migration_steps=%s, target_revision=%s" % (
+            self.connection_name, self.migration_direction, self.migration_steps, self.target_revision
         )
 
 
@@ -407,7 +570,7 @@ class Status(BaseCommand):
             try:
                 db_adapter = database.DbAdapterFactory.create(db_connection_config)
             except psycopg2.OperationalError as e:
-                print "%s: Failed to connect database %s on host %s:%s, user: %s"% (
+                print "%s: Failed to connect database %s on host %s:%s, user: %s" % (
                     db_connection_config.connection_name,
                     db_connection_config.db_name,
                     db_connection_config.host,
@@ -415,17 +578,22 @@ class Status(BaseCommand):
                     db_connection_config.user
                 )
                 print e.message.decode()
+                return FAILURE
 
             migrations_dao = migrations.MigrationsDao(db_adapter)
-            last_migration = migrations_dao.find_most_recent()
 
-            if last_migration is None:
-                print "%s: No migrations" % db_connection_config.connection_name
+            if migrations_dao.is_migration_table_exists() is True:
+                last_migration = migrations_dao.find_most_recent()
+
+                if last_migration is None:
+                    print "%s: No migrations" % db_connection_config.connection_name
+                else:
+                    print "%s: Revision %s" % (
+                        db_connection_config.connection_name,
+                        last_migration.revision
+                    )
             else:
-                print "%s: Revision %s" % (
-                    db_connection_config.connection_name,
-                    last_migration.revision
-                )
+                print "%s: Error! No migrations table were found." % db_connection_config.connection_name
 
             db_adapter.disconnect()
 
@@ -457,7 +625,7 @@ class Status(BaseCommand):
                 self.migrations_dir = str(args[0].split('=')[1])
                 args.pop(0)
 
-            # Parse optional [(-m | --migrations-dir) <path>]
+            # Parse optional [(c | --connection)]
             elif args[0] == '-c' or args[0] == '--connection':
                 if len(args) < 2:
                     raise BadCommandArguments
@@ -470,6 +638,101 @@ class Status(BaseCommand):
 
             else:
                 args.pop(0)
+
+        # Parse all the remaining necessary options
+        if len(args) > 0:
+            raise BadCommandArguments
+
+        print self.__repr__()
+
+    def __repr__(self):
+        return "(conn_name=%s)" % self.connection_name
+
+
+class Forget(BaseCommand):
+
+    connection_name = None
+    migrations_dir = None
+
+    def __init__(self, args=[]):
+        BaseCommand.__init__(self, args)
+
+    def execute(self):
+
+        if self.migrations_dir is None:
+            self.migrations_dir = os.path.abspath(os.getcwd())
+
+        # Get database connection configuration
+        if self.connection_name is None:
+            print "Error! Please provide a name of connection"
+            return FAILURE
+
+        config_file = self.migrations_dir + os.sep + DBMAKE_CONFIG_DIR + os.sep + DBMAKE_CONFIG_FILE
+
+        try:
+            db_connection_config = database.DbConnectionConfig.read(config_file, self.connection_name)
+        except IOError:
+            print "Error! Failed to read a config file."
+            return FAILURE
+
+        if db_connection_config is False:
+            print "Error! A connection with such a name doesn't exist."
+            return FAILURE
+
+        try:
+            db_adapter = database.DbAdapterFactory.create(db_connection_config)
+        except psycopg2.OperationalError as e:
+            print "%s: Failed to connect database %s on host %s:%s, user: %s"% (
+                db_connection_config.connection_name,
+                db_connection_config.db_name,
+                db_connection_config.host,
+                db_connection_config.port,
+                db_connection_config.user
+            )
+            print e.message.decode()
+            return FAILURE
+
+        migrations_dao = migrations.MigrationsDao(db_adapter)
+
+        if migrations_dao.is_migration_table_exists() is True:
+            migrations_dao.drop_migrations_table()
+
+        db_adapter.disconnect()
+
+        database.DbConnectionConfig.delete(config_file, self.connection_name)
+
+        return SUCCESS
+
+    @staticmethod
+    def print_help():
+        print """
+        usage: dbmake forget [(-m | --migrations-dir) <path>] <connection name>
+
+        Drops migrations table in database associated with <connection name> and removes
+        connection details from dbmake connections config file
+
+        Options:
+            -m, --migrations-dir    Where migrations are reside
+        """
+
+    def _parse_options(self, args):
+
+        if len(args) == 0:
+            raise BadCommandArguments
+
+        # Parse optional [(-m | --migrations-dir) <path>]
+        if args[0] == '-m' or args[0] == '--migrations-dir':
+            if len(args) < 2:
+                raise BadCommandArguments
+            args.pop(0)
+            self.migrations_dir = str(args.pop(0))
+
+        elif args[0].startswith("--migrations-dir="):
+            self.migrations_dir = str(args[0].split('=')[1])
+            args.pop(0)
+
+        # Parse <connection name>
+        self.connection_name = args.pop(0)
 
         # Parse all the remaining necessary options
         if len(args) > 0:

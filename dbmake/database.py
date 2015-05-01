@@ -6,6 +6,12 @@ import os
 import json
 
 
+class DbType:
+    MY_SQL = "mysql"
+    ORACLE = "oracle"
+    POSTGRES = "pgsql"
+
+
 class DbConnectionConfig:
 
     host = None
@@ -14,20 +20,21 @@ class DbConnectionConfig:
     dbname = None
     password = None
     connection_name = None
+    # db_type = DbType.POSTGRES
 
-    def __init__(self, host, dbname, user, password, connection_name, port="5432"):
+    def __init__(self, host, dbname, user, password, connection_name, port="5432", db_type=DbType.POSTGRES):
         self.host = host
         self.port = port
         self.dbname = dbname
         self.user = user
         self.password = password
         self.connection_name = connection_name
+        # self.db_type = db_type
 
-    def save(self, config_file, connection_to_update=None):
+    def save(self, config_file):
         """
         Adds current connection in a config_file.
         :param config_file: str A full path to a config file
-        :param connection_to_update: Name of a connection in config file you want to update its details
         """
 
         def create_config_file(file_, content_):
@@ -90,15 +97,27 @@ class DbConnectionConfig:
 
         return True
 
-    @staticmethod
-    def delete(config_file, connection_name):
+    @classmethod
+    def delete(cls, config_file, connection_name):
         """
         Deletes a connection details from a config_file
 
         :param config_file: str
         :param connection_name: str
         """
-        # TODO: Implement
+        connections_list = cls.connections_list(config_file)
+
+        for index, connection in enumerate(connections_list):
+            if connection["connection_name"] == connection_name:
+                connections_list.pop(index)
+                break
+
+        # Add new connection to a config file
+        with open(config_file, 'w+') as f:
+            config_string = json.dumps(connections_list, default=lambda o: o.__dict__, sort_keys=True, indent=4)
+            f.write(config_string)
+
+        return True
 
 
     @staticmethod
@@ -109,14 +128,8 @@ class DbConnectionConfig:
         :param config_file: A full path to a config file
         :return: List of dictionaries or False on failure
         """
-        try:
-            f = open(config_file, 'r')
-        except IOError as e:
-            print e.message.decode()
-            return False
-        else:
-            with f:
-                connections_list = json.load(f)
+        with open(config_file, 'r') as f:
+            connections_list = json.load(f)
 
         return connections_list
 
@@ -132,13 +145,7 @@ class DbConnectionConfig:
         """
 
         # Check if dbmake config file exists...
-        if not os.path.exists(config_file):
-            return False
-
         connections_list = cls.connections_list(config_file)
-
-        if connections_list is False:
-            return False
 
         for connection in connections_list:
             if connection["connection_name"] == connection_name:

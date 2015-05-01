@@ -3,29 +3,74 @@ import sys
 import os
 import traceback
 import psycopg2
-from common import DbmakeException, MIGRATIONS_TABLE
-from database import DbConnectionConfig, DbAdapterFactory
+from common import DbmakeException, MIGRATIONS_TABLE, SUCCESS, FAILURE
+from database import DbConnectionConfig, DbAdapterFactory, DbType
+import migrations
 
 
-class ExecutableTask:
+class BaseDbTask:
     """
-    Base class for all dbmake.sh executable tasks
+    Base class for all dbmake database tasks
     """
+    db_adapter = None
     db_connection_config = None
 
-    def __init__(self, db_connection_config):
+    def __init__(self, db_connection_config, db_adapter=None):
         """
-        :type db_connection_config: database.DbConnectionConfig
+        :type db_connection_config: DbConnectionConfig
+        :type db_adapter:
         """
         self.db_connection_config = db_connection_config
 
-    def execute(self):
+        if db_adapter is None:
+            self.db_adapter = DbAdapterFactory.create(db_connection_config)
+        else:
+            self.db_adapter = db_adapter
+
+    def execute(self, *arguments, **keywords):
         raise NotImplementedError
 
 
-class DbTasksFactory:
+class DbTaskType:
     """
-    Use this class statically to create database tasks instances
+    Lists all database tasks types that DbTasks factory must support
+    """
+    INIT = "init"
+    DUMP_ZERO_MIGRATION = "dump_zero_migration"
+
+
+class BaseDbTasksFactory:
+    """
+    A base database tasks factory, produces database tasks instances
+    """
+    def __init__(self):
+        pass
+
+    @classmethod
+    def create(cls, task_name, db_connection_config, db_adapter=None):
+        raise NotImplementedError
+
+
+class AbstractDbTasksFactory:
+    """
+    Abstract factory to create DbTasksFactories depending on Database System type (MySQL, PostgreSQL, etc.)
+    """
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def create(db_type=DbType.POSTGRES):
+        """
+        Returns a database tasks factory based on the database's type
+        """
+        if db_type == DbType.POSTGRES:
+            return PgDbTasksFactory
+
+
+class PgDbTasksFactory(BaseDbTasksFactory):
+    """
+    A database tasks factory, produces PostgreSQL database tasks instances
     """
     def __init__(self):
         pass
@@ -33,79 +78,96 @@ class DbTasksFactory:
     @classmethod
     def create(cls, task_name, db_connection_config, db_adapter=None):
 
-        if task_name == "init":
-            return DbInit(db_connection_config, db_adapter)
+        if task_name == DbTaskType.INIT:
+            return PgDbInit(db_connection_config, db_adapter)
+        elif task_name == DbTaskType.DUMP_ZERO_MIGRATION:
+            return PgDbDumpZeroMigration(db_connection_config, db_adapter)
         else:
             raise DbmakeException('Unknown task name "' + task_name + '"')
 
 
-class DbInit(ExecutableTask):
-    """
-    Initiates dbmake necessary table/s within a database
-    """
-
-    db_adapter = None
+class PgDbInit(BaseDbTask):
 
     def __init__(self, db_connection_config, db_adapter=None):
         """
-        :param db_connection_config: database.DbConnectionConfig
+        :param db_connection_config: DbConnectionConfig
         """
-        ExecutableTask.__init__(self, db_connection_config)
-
-        if db_adapter is None:
-            self.db_adapter = DbAdapterFactory.create(db_connection_config)
-        else:
-            self.db_adapter = db_adapter
+        BaseDbTask.__init__(self, db_connection_config, db_adapter)
 
     def execute(self):
-        print "DbInit START"
+        """
+        Initiates dbmake necessary table/s within a PostgreSQL database
+        """
+        print "PgDbInit START"
 
         def _create_migrations_table(db_adapter):
             query = """
             CREATE TABLE %s (
                 id SERIAL,
-                revision character varying(100) NOT NULL,
+                revision integer NOT NULL,
                 migration_name character varying(100),
                 create_date TIMESTAMP DEFAULT NOW() NOT NULL
             )
             """ % MIGRATIONS_TABLE
             self.db_adapter.execute_string(query)
 
-        if self._is_migration_table_exists() is True:
+        migrations_dao = migrations.MigrationsDao(self.db_adapter)
+
+        if migrations_dao.is_migration_table_exists() is True:
             print "Error! Migrations table is already exists"
             print "DbInit FINISH"
             return False
 
         print "Creating migrations table"
         _create_migrations_table(self.db_adapter)
-        print "DbInit FINISH"
+        print "PgDbInit FINISH"
 
         return True
 
-    def _is_migration_table_exists(self):
+
+class PgDbDumpZeroMigration(BaseDbTask):
+
+    def __init__(self, db_connection_config, db_adapter=None):
         """
-        Checks if the migrations table is already exists
-        :returns Boolean
+        :param db_connection_config: DbConnectionConfig
         """
-        cursor = self.db_adapter.get_cursor()
-        cursor.execute(
-            "SELECT * FROM information_schema.tables WHERE table_name=%s",
-            (MIGRATIONS_TABLE,)
+        BaseDbTask.__init__(self, db_connection_config, db_adapter)
+
+    def execute(self, zero_migration_file):
+        """
+        Initiates dbmake necessary table/s within a PostgreSQL database
+        """
+        print "PgDbDumpZeroMigration START"
+
+        # Dump initial database structure into ZERO-MIGRATION (initial migration) file
+        result = os.system(
+            'PGPASSWORD="%s" pg_dump --username=%s --host=%s --schema-only --no-privileges --encoding=LATIN1 '
+            '--dbname=%s --port=%s --file=%s' % (
+                self.db_connection_config.password,
+                self.db_connection_config.user,
+                self.db_connection_config.host,
+                self.db_connection_config.dbname,
+                self.db_connection_config.port,
+                zero_migration_file
+            )
         )
 
-        if cursor.rowcount == 0:
+        print "PgDbDumpZeroMigration FINISH"
+
+        if result == FAILURE:
             return False
+
         return True
 
 
-class DbForget(ExecutableTask):
+class DbForget(BaseDbTask):
     """
     Makes dbmake.sh to remove its subsystem from specified database
     """
     MIGRATIONS_TABLE_NAME = "_dbmake_migrations"
 
     def __init__(self, options, dbconnection=None):
-        ExecutableTask.__init__(self, options)
+        BaseDbTask.__init__(self, options)
 
         if dbconnection is None:
             # Initialize database connection
@@ -166,7 +228,7 @@ class DbForget(ExecutableTask):
         return True
 
 
-class DbCreate(ExecutableTask):
+class DbCreate(BaseDbTask):
     """
     Create new empty database and initializes migration subsystem.
     Attempts tp drop existing database if drop_existing=True
@@ -175,7 +237,7 @@ class DbCreate(ExecutableTask):
     MIGRATIONS_TABLE_NAME = "_dbmake_migrations"
 
     def __init__(self, options, dbconnection=None):
-        ExecutableTask.__init__(self, options)
+        BaseDbTask.__init__(self, options)
 
         if dbconnection is None:
             # Initialize database connection
@@ -272,7 +334,7 @@ class DbCreate(ExecutableTask):
         query = """
             CREATE TABLE %s (
                 id      SERIAL,
-                version character varying(100) NOT NULL,
+                version INTEGER NOT NULL,
                 file    character varying(100),
                 create_date TIMESTAMP DEFAULT NOW() NOT NULL
             )
@@ -313,7 +375,7 @@ class DbCreate(ExecutableTask):
         self.dbconnection.commit()
 
 
-class DbMigrate(ExecutableTask):
+class DbMigrate(BaseDbTask):
     def execute(self):
         pass
 
