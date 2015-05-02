@@ -322,6 +322,9 @@ class Migrate(BaseCommand):
 
     def execute(self):
 
+        if self.dry_run:
+            print "Running DRY"
+
         if self.migrations_dir is None:
             self.migrations_dir = os.path.abspath(os.getcwd())
 
@@ -415,7 +418,7 @@ class Migrate(BaseCommand):
                     db_connection_config.connection_name,
                     target_revision
                 )
-                migrations_manager.migrate_to_revision(target_revision, db_adapter)
+                migrations_manager.migrate_to_revision(target_revision, db_adapter, self.dry_run)
                 print "-" * 20
             else:
                 print "%s: Error! No migrations table has been found." % db_connection_config.connection_name
@@ -446,12 +449,12 @@ class Migrate(BaseCommand):
         in the %s file that resides in %s folder within migrations directory.
 
         Optional:
-            -d, --dry-run                         Dry run (print commands, but do not execute)
             -m <path>, --migrations-dir=<path>    Where migrations reside
             -c <name>, --connection=<name>        Connection name of a database to migrate
             -r <value>, --revision=<value>        Number of revision to migrate to
             --up=<steps>                          Number of revisions to migrate UP
             --down=<steps>                        Number of revisions to migrate DOWN (rollback)
+            -d, --dry-run                         Dry run (print commands, but do not execute)
         """ % (DBMAKE_CONFIG_FILE, DBMAKE_CONFIG_DIR)
 
     def _parse_options(self, args):
@@ -604,7 +607,9 @@ class Status(BaseCommand):
         print """
         usage: dbmake status [options]
 
-        Note: <connection name> is used to refer to database connection parameters.
+        Note:
+        If connection name is not provided, the command will check status for all connections
+        initialized in the migrations directory.
 
         Options:
             -m, --migrations-dir    Where migrations are reside
@@ -612,6 +617,8 @@ class Status(BaseCommand):
         """
 
     def _parse_options(self, args):
+
+        options = ['-m', '--migrations-dir', '--migrations-dir=', '-c', '--connection', '--connection=']
 
         while len(args) > 0:
             # Parse optional [(-m | --migrations-dir) <path>]
@@ -636,8 +643,8 @@ class Status(BaseCommand):
                 self.connection_name = str(args[0].split('=')[1])
                 args.pop(0)
 
-            else:
-                args.pop(0)
+            elif args[0] not in options:
+                raise BadCommandArguments
 
         # Parse all the remaining necessary options
         if len(args) > 0:
@@ -701,6 +708,8 @@ class Forget(BaseCommand):
 
         database.DbConnectionConfig.delete(config_file, self.connection_name)
 
+        print 'Connection "%s" has been forgotten.' % self.connection_name
+
         return SUCCESS
 
     @staticmethod
@@ -733,6 +742,150 @@ class Forget(BaseCommand):
 
         # Parse <connection name>
         self.connection_name = args.pop(0)
+
+        # Parse all the remaining necessary options
+        if len(args) > 0:
+            raise BadCommandArguments
+
+        print self.__repr__()
+
+    def __repr__(self):
+        return "(conn_name=%s)" % self.connection_name
+
+
+class Rollback(BaseCommand):
+
+    connection_name = None
+    migrations_dir = None
+    dry_run = False
+
+    def __init__(self, args=[]):
+        BaseCommand.__init__(self, args)
+
+    def execute(self):
+
+        if self.dry_run:
+            print "Running DRY"
+
+        if self.migrations_dir is None:
+            self.migrations_dir = os.path.abspath(os.getcwd())
+
+        # Get database connection\s configurations
+        connections_configs = []
+        if self.connection_name is not None:
+            config_file = self.migrations_dir + os.sep + DBMAKE_CONFIG_DIR + os.sep + DBMAKE_CONFIG_FILE
+            connections_configs.append(database.DbConnectionConfig.read(config_file, self.connection_name))
+        else:
+            config_file = self.migrations_dir + os.sep + DBMAKE_CONFIG_DIR + os.sep + DBMAKE_CONFIG_FILE
+            connections_configs = database.DbConnectionConfig.read_all(config_file)
+
+        if connections_configs is False or connections_configs[0] is False:
+            print "Failed to read config file"
+            return FAILURE
+
+        migrations_manager = migrations.MigrationsManager(self.migrations_dir)
+        revisions = migrations_manager.revisions()
+
+        for db_connection_config in connections_configs:
+
+            try:
+                db_adapter = database.DbAdapterFactory.create(db_connection_config)
+            except psycopg2.OperationalError as e:
+                print "%s: Failed to connect database %s on host %s:%s, user: %s" % (
+                    db_connection_config.connection_name,
+                    db_connection_config.db_name,
+                    db_connection_config.host,
+                    db_connection_config.port,
+                    db_connection_config.user
+                )
+                print e.message.decode()
+                continue
+
+            migrations_dao = migrations.MigrationsDao(db_adapter)
+
+            if migrations_dao.is_migration_table_exists() is True:
+
+                # Find current migration
+                recent_migration_vo = migrations_dao.find_most_recent()
+                current_revision = int(recent_migration_vo.revision)
+
+                # Find target revision
+                if current_revision not in revisions:
+                    print "%s: Error! Current revision's migration wasn't found." % db_connection_config.connection_name
+                    return FAILURE
+                else:
+                    current_index = revisions.index(current_revision)
+
+                    if (current_index - 1) < 0:
+                        # If number of steps exceed the zero index of a revisions list, and migration
+                        # direction is DOWN, then set target revision to the latest one
+                        target_revision = 0
+                    else:
+                        target_revision = revisions[current_index - 1]
+
+                # Migrate...
+                print "%s: Rolling back... (target revision:  %s)" % (
+                    db_connection_config.connection_name,
+                    target_revision
+                )
+                migrations_manager.migrate_to_revision(target_revision, db_adapter, self.dry_run)
+                print "-" * 20
+            else:
+                print "%s: Error! No migrations table has been found." % db_connection_config.connection_name
+
+            db_adapter.disconnect()
+
+        return SUCCESS
+
+    @staticmethod
+    def print_help():
+        print """
+        usage: dbmake rollback [(-m | --migrations-dir) <path>] [options]
+
+        Note:
+        If no connection name provided, this command will rollback for all connections
+        initialized in the migrations directory.
+
+        Options:
+            -m, --migrations-dir    Where migrations are reside
+            -c, --conection         Connection name to rollback with a database
+            -d, --dry-run           Dry run (print commands, but do not execute)
+        """
+
+    def _parse_options(self, args):
+
+        options = ['-m', '--migrations-dir', '--migrations-dir=', '-c', '--connection', '--connection=']
+
+        while len(args) > 0:
+            # Parse optional [(-m | --migrations-dir) <path>]
+            if args[0] == '-m' or args[0] == '--migrations-dir':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.migrations_dir = str(args.pop(0))
+
+            elif args[0].startswith("--migrations-dir="):
+                self.migrations_dir = str(args[0].split('=')[1])
+                args.pop(0)
+
+            # Parse optional [(c | --connection)]
+            elif args[0] == '-c' or args[0] == '--connection':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.connection_name = str(args.pop(0))
+
+            elif args[0].startswith("--connection="):
+                self.connection_name = str(args[0].split('=')[1])
+                args.pop(0)
+
+            # Parse optional [(c | --connection)]
+            elif args[0] == '-d' or args[0] == '--dry-run':
+                args.pop(0)
+                self.dry_run = True
+
+            elif args[0] not in options:
+                raise BadCommandArguments
 
         # Parse all the remaining necessary options
         if len(args) > 0:

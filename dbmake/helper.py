@@ -18,6 +18,11 @@ def underscore_to_camelcase(s):
     return "".join(map(str.capitalize, l[:]))
 
 
+def camelcase(s, delimeter="_"):
+    l = s.split(delimeter)
+    return "".join(map(str.capitalize, l[:]))
+
+
 def get_module_classes(module_name):
     return pyclbr.readmodule(module_name).keys()
 

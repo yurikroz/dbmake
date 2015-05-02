@@ -9,6 +9,18 @@ import helper
 from common import BadCommandArguments, CommandNotExists
 
 
+def command_to_class_name(command_name):
+    """
+    Gets a command name and returns it's class name
+    :param command_name:
+    :return: str
+    """
+    class_name = helper.camelcase(command_name, "_")
+    class_name = helper.camelcase(class_name, "-")
+
+    return class_name
+
+
 def get_command(command_name, args=[]):
     """
     Returns Application command instance corresponding to a passed command_name.
@@ -16,7 +28,7 @@ def get_command(command_name, args=[]):
     :param str command_name: Command name as it has been parsed from sys.argv
     """
 
-    command_name = helper.underscore_to_camelcase(command_name)
+    command_name = command_to_class_name(command_name)
 
     try:
         command_class = helper.get_class("commands." + command_name)
@@ -38,16 +50,15 @@ def print_help():
 
     usage: dbmake <command> [options]
        or: dbmake (-h | --help) [<command name>]
+       or: dbmake (-v | --version)
 
     Commands:
-         init               Initializes migration subsystem for already existing database
-         forget             Removes dbmake tables from database and removes its connection from databases list
-         create             Creates new empty database(s) and initializes migrations subsystem.
-         migrate            Update DB schema using migration files to specified version (with option: VERSION=x)
-         reset              This will drop the database, recreate it and load the current schema into it.
-         rollback           Rolls the schema back to the previous version (it is possible to specify the number of rollback steps w/ STEP=n)
-         status             Display status of migrations
-         version            Retrieves the current schema version number
-         generate_doc       Generates database documentation based on documentation in migration files.
-         generate_migration Generates a new template migration file.
+         init               Add new database connection details and initialize migrations subsystem.
+         status             Show database(s) schema revisions.
+         migrate            Update database(s) structure using migration files
+         rollback           Rolls back database(s) schema(s) to a previous revision. (same as: migrate --down 1)
+         forget             Drop migrations table in database and remove its connection details from connections list.
+         create             Create a new empty database and initializes migrations subsystem in it.
+         reset              Drop a database, recreate it and load the recent schema revision into it.
+         doc-generate       Generates database documentation
     """

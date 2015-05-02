@@ -4,7 +4,7 @@ import sys
 from common import FAILURE, SUCCESS
 from dbmake_cli import get_command, print_help
 from helper import get_class, underscore_to_camelcase
-from common import CommandNotExists, BadCommandArguments
+from common import CommandNotExists, BadCommandArguments, DBMAKE_VERSION
 
 
 class App:
@@ -36,6 +36,9 @@ class App:
             else:
                 print_help()
                 return SUCCESS
+        elif command_name == '-v' or command_name == '--version':
+            print DBMAKE_VERSION
+            return SUCCESS
 
         # Get a command instance to execute and execute it
         try:

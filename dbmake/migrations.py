@@ -181,7 +181,7 @@ class MigrationsManager:
         # self._db_adapter = db_adapter
         self._migrations_dir = migrations_dir
 
-    def migrate_to_revision(self, target_revision, db_adapter):
+    def migrate_to_revision(self, target_revision, db_adapter, dry_run=False):
         """
         :param target_revision: Migration revision to migrate to
         :return:
@@ -206,15 +206,20 @@ class MigrationsManager:
                 raise common.DbmakeException("Error! No ZERO-MIGRATION was found in %s" % self._migrations_dir)
 
             print "Migrating up to revision: 0...",
-            # result = migrations[0].migrate(self._db_adapter)
-            result = migrations[0].migrate(db_adapter)
-            if result is True:
-                # Update migrations table
-                migrations_dao.create(migrations[0].get_vo())
-                current_revision = 0
+
+            if not dry_run:
+                # result = migrations[0].migrate(self._db_adapter)
+                result = migrations[0].migrate(db_adapter)
+                if result is True:
+                    # Update migrations table
+                    migrations_dao.create(migrations[0].get_vo())
+                    current_revision = 0
+                else:
+                    print "Failure"
+                    raise common.DbmakeException("Error! Failed to migrate to revision %s" % str(migrations[0].revision))
             else:
-                print "Failure"
-                raise common.DbmakeException("Error! Failed to migrate to revision %s" % str(migrations[0].revision))
+                current_revision = 0
+
             print "OK"
             applied_zero_migration = True
         else:
@@ -237,7 +242,6 @@ class MigrationsManager:
             raise common.DbmakeException("Error! A migration file of target revision was not found. "
                                          "Target revision: %s" % target_revision)
 
-
         if current_index == target_index:
             if not applied_zero_migration:
                 print "Current revision is already equals to target revision"
@@ -246,16 +250,20 @@ class MigrationsManager:
         elif (target_index - current_index) > 0:
             for i in range(current_index + 1, target_index + 1, 1):
                 print "Migrating up to revision: %s..." % str(migrations[i].revision),
-                # migrations[i].migrate(self._db_adapter)
-                migrations[i].migrate(db_adapter)
-                migrations_dao.create(migrations[i].get_vo())
+
+                if not dry_run:
+                    # migrations[i].migrate(self._db_adapter)
+                    migrations[i].migrate(db_adapter)
+                    migrations_dao.create(migrations[i].get_vo())
                 print "OK"
         else:
             for i in range(current_index, target_index, -1):
                 print "Migrating down to revision: %s..." % str(migrations[i-1].revision),
-                # migrations[i].rollback(self._db_adapter)
-                migrations[i].rollback(db_adapter)
-                migrations_dao.create(migrations[i-1].get_vo())
+
+                if not dry_run:
+                    # migrations[i].rollback(self._db_adapter)
+                    migrations[i].rollback(db_adapter)
+                    migrations_dao.create(migrations[i-1].get_vo())
                 print "OK"
 
         return True
