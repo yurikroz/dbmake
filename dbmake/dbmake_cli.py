@@ -56,9 +56,10 @@ def print_help():
          init               Add new database connection details and initialize migrations subsystem.
          status             Show database(s) schema revisions.
          migrate            Update database(s) structure using migration files
-         rollback           Rolls back database(s) schema(s) to a previous revision. (same as: migrate --down 1)
+         rollback           Roll back database(s) schema(s) to a previous revision. (same as: migrate --down 1)
          forget             Drop migrations table in database and remove its connection details from connections list.
          create             Create a new empty database and initializes migrations subsystem in it.
          reset              Drop a database, recreate it and load the recent schema revision into it.
-         doc-generate       Generates database documentation
+         new-migration      Create a new migration file
+         doc-generate       Generate a database documentation
     """

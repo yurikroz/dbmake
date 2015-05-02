@@ -2,7 +2,6 @@
 import os
 import re
 import common
-import database
 
 
 class MigrationVO:
@@ -91,6 +90,32 @@ class Migration:
     revision = None
     migrate_up_statements = None
     migrate_down_statements = None
+
+    MIGRATION_TEMPLATE = '''
+    -- DBMAKE: MIGRATE UP
+    /*
+        Place here all necessary DDL statements describing schema changes to be made
+
+        Example:
+        CREATE TABLE my_customers (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(45),
+            update_date TIMESTAMP DEFAULT NOW() NOT NULL,
+            create_date TIMESTAMP DEFAULT NOW() NOT NULL
+        );
+    */
+
+    ''' + MIGRATE_UP_DOWN_SEPARATOR + '''
+
+    -- DBMAKE: MIGRATE DOWN
+    /*
+        Place here all DDL statements canceling the changes made to schema
+
+        Example:
+        DROP TABLE my_customers;
+    */
+
+    '''
 
     def __init__(self, migration_file):
         """

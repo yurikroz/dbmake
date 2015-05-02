@@ -1,6 +1,7 @@
 
 import sys
 import os
+import time
 import getpass
 import psycopg2
 import database
@@ -91,8 +92,6 @@ class Init(BaseCommand):
         if os.path.exists(zero_migration_file) and len(schema_table_list) > 0:
             print "Error! Database is not empty while ZERO-MIGRATION file already exists."
             return FAILURE
-
-        # TODO: Check that migrations directory has no migration scripts while there's yet no ZERO-MIGRATION file
 
         # Now let's check if Zero-Migration exists and if true, check whether database is empty
         # If Zero-Migration doesn't exist, generate it out of database's current structure,
@@ -185,7 +184,7 @@ class Init(BaseCommand):
             try:
                 os.makedirs(dbmake_config_dir)
             except OSError as e:
-                msg = e.message()
+                msg = e.message.decode()
                 print "Failure"
                 print msg
                 return False
@@ -216,7 +215,7 @@ class Init(BaseCommand):
             -u, --user      Database username
         """
 
-    def _parse_options(self, args):
+    def _parse_options(self, args=[]):
         if len(args) == 0:
             raise BadCommandArguments
 
@@ -386,7 +385,8 @@ class Migrate(BaseCommand):
                 elif self.migration_steps is not None:
 
                     if current_revision not in revisions:
-                        print "%s: Error! Current revision's migration wasn't found." % db_connection_config.connection_name
+                        print "%s: Error! Current revision's migration wasn't found." \
+                              % db_connection_config.connection_name
                         return FAILURE
                     else:
                         current_index = revisions.index(current_revision)
@@ -427,16 +427,6 @@ class Migrate(BaseCommand):
 
         return SUCCESS
 
-    def _target_revision(self, revisions, current_revision):
-        """
-        Returns a Target Revision for current connection
-        :param revisions:
-        :param current_revision:
-        :return:
-        """
-        # TODO: Implement _target_revision()
-        pass
-
     @staticmethod
     def print_help():
         # --no-dump               Don't dump database structure into ZERO MIGRATION file
@@ -457,7 +447,7 @@ class Migrate(BaseCommand):
             -d, --dry-run                         Dry run (print commands, but do not execute)
         """ % (DBMAKE_CONFIG_FILE, DBMAKE_CONFIG_DIR)
 
-    def _parse_options(self, args):
+    def _parse_options(self, args=[]):
 
         options = ['-m', '--migration-dir', '--migrations-dir=', '-c',
                    '--connection', '--connection=', '-r', '--revision', '--revision=',
@@ -612,11 +602,11 @@ class Status(BaseCommand):
         initialized in the migrations directory.
 
         Options:
-            -m, --migrations-dir    Where migrations are reside
+            -m, --migrations-dir    Where migrations reside
             -c, --connection        Connection name to check status with
         """
 
-    def _parse_options(self, args):
+    def _parse_options(self, args=[]):
 
         options = ['-m', '--migrations-dir', '--migrations-dir=', '-c', '--connection', '--connection=']
 
@@ -721,7 +711,7 @@ class Forget(BaseCommand):
         connection details from dbmake connections config file
 
         Options:
-            -m, --migrations-dir    Where migrations are reside
+            -m, --migrations-dir    Where migrations reside
         """
 
     def _parse_options(self, args):
@@ -847,7 +837,7 @@ class Rollback(BaseCommand):
         initialized in the migrations directory.
 
         Options:
-            -m, --migrations-dir    Where migrations are reside
+            -m, --migrations-dir    Where migrations reside
             -c, --conection         Connection name to rollback with a database
             -d, --dry-run           Dry run (print commands, but do not execute)
         """
@@ -895,3 +885,105 @@ class Rollback(BaseCommand):
 
     def __repr__(self):
         return "(conn_name=%s)" % self.connection_name
+
+
+class NewMigration(BaseCommand):
+
+    migration_name = None
+    migrations_dir = None
+    create_only = False
+
+    def __init__(self, args=[]):
+        BaseCommand.__init__(self, args)
+
+    def execute(self):
+
+        if self.migrations_dir is None:
+            self.migrations_dir = os.path.abspath(os.getcwd())
+
+        if self.migration_name is None:
+            print "Error! Please provide a migration name"
+            return FAILURE
+
+        migration_file_name = str(int(time.time())) + "_" + self.migration_name + ".sql"
+        migration_file = self.migrations_dir + os.sep + migration_file_name
+
+        # Check if file is already exists
+        if os.path.exists(migration_file):
+            print "Error! %s is already exists." % migration_file
+            return FAILURE
+
+        # Create a new migration file
+        try:
+            f = open(migration_file, 'w+')
+        except IOError as e:
+            print "Failure"
+            print e.message.decode()
+            return FAILURE
+        else:
+            with f:
+                f.write(migrations.Migration.MIGRATION_TEMPLATE)
+
+        # Open the migration file in default text editor
+        if not self.create_only:
+            try:
+                import webbrowser
+                webbrowser.open(migration_file)
+            except Exception as e:
+                print e.message.decode()
+                return FAILURE
+
+        print "FINISHED!"
+
+        return SUCCESS
+
+    @staticmethod
+    def print_help():
+        print """
+        usage: dbmake new-migration ((-n | --name) <migration name>) [options]
+
+        Note:
+        It's recommended that <migration name> will be in lowered case with underscores separating
+        words format
+
+        Options:
+            -m, --migrations-dir    Where migrations reside
+            -c, --create-only       Create a new migration file but don't open it in text editor
+        """
+
+    def _parse_options(self, args):
+
+        options = ['-m', '--migrations-dir', '--migrations-dir=', '-c', '--create-only', '-n', '--name']
+
+        while len(args) > 0:
+            # Parse optional [(-m | --migrations-dir) <path>]
+            if args[0] == '-m' or args[0] == '--migrations-dir':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.migrations_dir = str(args.pop(0))
+
+            elif args[0].startswith("--migrations-dir="):
+                self.migrations_dir = str(args[0].split('=')[1])
+                args.pop(0)
+
+            elif args[0] == '-n' or args[0] == '--name':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.migration_name = str(args.pop(0))
+
+            elif args[0].startswith("--name="):
+                self.migration_name = str(args[0].split('=')[1])
+                args.pop(0)
+
+            elif args[0] == '-c' or args[0] == '--create-only':
+                args.pop(0)
+                self.create_only = True
+
+            elif args[0] not in options:
+                raise BadCommandArguments
+
+        # Parse all the remaining necessary options
+        if len(args) > 0:
+            raise BadCommandArguments
