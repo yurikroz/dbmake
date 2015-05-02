@@ -933,7 +933,7 @@ class NewMigration(BaseCommand):
                 print e.message.decode()
                 return FAILURE
 
-        print "FINISHED!"
+        print "Created: %s" % migration_file
 
         return SUCCESS
 
