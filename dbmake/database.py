@@ -119,7 +119,6 @@ class DbConnectionConfig:
 
         return True
 
-
     @staticmethod
     def connections_list(config_file):
         """
@@ -132,6 +131,23 @@ class DbConnectionConfig:
             connections_list = json.load(f)
 
         return connections_list
+
+    @staticmethod
+    def is_connection_name_exists(config_file, connection_name):
+        """
+        Reads a database connections configuration file and returns a list
+        of database connections as a list of dictionaries
+        :param config_file: A full path to a config file
+        :return: List of dictionaries or False on failure
+        """
+        with open(config_file, 'r') as f:
+            connections_list = json.load(f)
+
+        for connection in connections_list:
+            if connection['connection_name'] == connection_name:
+                return True
+
+        return False
 
     @classmethod
     def read(cls, config_file, connection_name):
@@ -352,3 +368,6 @@ class PgAdapter(BaseDbAdapter):
             records.append(dict(row)["table_name"])
 
         return records
+
+    def set_isolation_level(self, isolation_level):
+        self._connection.set_isolation_level(isolation_level)

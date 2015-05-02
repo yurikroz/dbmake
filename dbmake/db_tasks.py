@@ -36,6 +36,7 @@ class DbTaskType:
     Lists all database tasks types that DbTasks factory must support
     """
     INIT = "init"
+    CREATE = "create"
     DUMP_ZERO_MIGRATION = "dump_zero_migration"
 
 
@@ -63,6 +64,7 @@ class AbstractDbTasksFactory:
     def create(db_type=DbType.POSTGRES):
         """
         Returns a database tasks factory based on the database's type
+        :return: BaseDbTasksFactory
         """
         if db_type == DbType.POSTGRES:
             return PgDbTasksFactory
@@ -82,6 +84,8 @@ class PgDbTasksFactory(BaseDbTasksFactory):
             return PgDbInit(db_connection_config, db_adapter)
         elif task_name == DbTaskType.DUMP_ZERO_MIGRATION:
             return PgDbDumpZeroMigration(db_connection_config, db_adapter)
+        elif task_name == DbTaskType.CREATE:
+            return PgDbCreate(db_connection_config, db_adapter)
         else:
             raise DbmakeException('Unknown task name "' + task_name + '"')
 
@@ -160,72 +164,50 @@ class PgDbDumpZeroMigration(BaseDbTask):
         return True
 
 
-class DbForget(BaseDbTask):
+class PgDbCreate(BaseDbTask):
     """
-    Makes dbmake.sh to remove its subsystem from specified database
+    Create new empty database and initializes migration subsystem.
     """
-    MIGRATIONS_TABLE_NAME = "_dbmake_migrations"
 
-    def __init__(self, options, dbconnection=None):
-        BaseDbTask.__init__(self, options)
+    def __init__(self, db_connection_config, db_adapter=None):
+        BaseDbTask.__init__(self, db_connection_config, db_adapter)
 
-        if dbconnection is None:
-            # Initialize database connection
-            conn_string = "host='" + options.db_host + "' dbname='" + options.db_name + "' user='" + \
-                          options.db_user + "' password='" + options.db_password + "'"
+    def execute(self, dbname, drop_existing=False):
 
-            # Connect to database
+        print self.__class__.__name__ + " BEGIN"
+
+        self.db_adapter.set_isolation_level(0)
+
+        if drop_existing:
             try:
-                dbconnection = psycopg2.connect(conn_string)
+                self._drop_db(dbname)
             except psycopg2.ProgrammingError as e:
-                msg = e.message.decode()
-                print "Failed to connect to database server with specified parameters.\n"
-                sys.exit(1)
+                print e.message.decode()
+                return False
 
-        self.dbconnection = dbconnection
-
-    def execute(self):
-        """
-        Initializes migration subsystem in specified database.
-        """
-        logging.info("db:forget BEGIN")
-        print "db:forget BEGIN"
-
-        def _drop_migrations_table(dbconnection):
-            query = "DROP TABLE %s " % self.MIGRATIONS_TABLE_NAME
-            cur = dbconnection.cursor()
-            cur.execute(query)
-            dbconnection.commit()
-
-        if self._is_db_initialized() is True:
-            logging.info("- Going to drop migrations table")
-            print "- Going to drop migrations table"
-            _drop_migrations_table(self.dbconnection)
-        else:
-            logging.info("- Database is not initialized, no need to do anything")
-            print "- Database is not initialized, no need to do anything"
-
-        logging.info("db:forget FINISH")
-        print "db:forget FINISH"
-
-    def _is_db_initialized(self):
-        """
-        Checks if the database is already initialized
-
-        :returns Boolean
-        """
-
-        cursor = self.dbconnection.cursor()
-
-        query = "SELECT * FROM information_schema.tables " \
-                + "WHERE table_name='%s'" % self.MIGRATIONS_TABLE_NAME
-
-        cursor.execute(query)
-
-        if cursor.rowcount == 0:
+        try:
+            self._create_db(dbname)
+        except psycopg2.ProgrammingError as e:
+            print e.message.decode()
             return False
 
+        print self.__class__.__name__ + " FINISH"
+
         return True
+
+    # ----------------------------------------------------------
+    def _create_db(self, dbname):
+        print "Creating database %s" % dbname
+        cursor = self.db_adapter.get_cursor()
+        cursor.execute("CREATE DATABASE %s;" % dbname)
+        self.db_adapter.commit()
+
+    # ----------------------------------------------------------
+    def _drop_db(self, dbname):
+        print "Dropping database %s" % dbname
+        cursor = self.db_adapter.get_cursor()
+        cursor.execute("DROP DATABASE %s;" % dbname)
+        self.db_adapter.commit()
 
 
 class DbCreate(BaseDbTask):
@@ -373,9 +355,3 @@ class DbCreate(BaseDbTask):
 
 
         self.dbconnection.commit()
-
-
-class DbMigrate(BaseDbTask):
-    def execute(self):
-        pass
-

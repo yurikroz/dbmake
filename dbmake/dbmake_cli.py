@@ -3,6 +3,10 @@
 """
 The purpose of this module is to parse user commands passed to "dbmake".
 Also the module contains the HELP string describes how to use the utility.
+
+TODO:
+Implement "doc-generate" command
+Implement "reset" command (Drop a database, recreate it and load the recent schema revision into it.)
 """
 
 import helper
@@ -59,7 +63,6 @@ def print_help():
          rollback           Roll back database(s) schema(s) to a previous revision. (same as: migrate --down 1)
          forget             Drop migrations table in database and remove its connection details from connections list.
          create             Create a new empty database and initializes migrations subsystem in it.
-         reset              Drop a database, recreate it and load the recent schema revision into it.
          new-migration      Create a new migration file
          doc-generate       Generate a database documentation
     """

@@ -8,7 +8,7 @@ import database
 import db_tasks
 import migrations
 from common import MIGRATIONS_TABLE, BadCommandArguments, FAILURE, SUCCESS, DBMAKE_CONFIG_DIR, \
-    DBMAKE_CONFIG_FILE, ZERO_MIGRATION_FILE_NAME, ZERO_MIGRATION_NAME
+    DBMAKE_CONFIG_FILE, ZERO_MIGRATION_FILE_NAME, ZERO_MIGRATION_NAME, DOCUMENTATION_DIR
 
 
 class BaseCommand:
@@ -987,3 +987,384 @@ class NewMigration(BaseCommand):
         # Parse all the remaining necessary options
         if len(args) > 0:
             raise BadCommandArguments
+
+
+class Create(BaseCommand):
+
+    new_connection_name = None
+    new_dbname = None
+    use_connection_name = None
+    use_dbname = None
+    db_password = None
+    db_user = None
+    db_host = None
+    db_port = '5432'
+    db_type = database.DbType.POSTGRES
+    migrations_dir = None
+    create_empty = False
+    drop_existing = False
+
+    def __init__(self, args=[]):
+        BaseCommand.__init__(self, args)
+
+    def execute(self):
+
+        if self.migrations_dir is None:
+            migrations_dir = os.path.abspath(os.getcwd())
+        else:
+            migrations_dir = self.migrations_dir
+
+        config_file = migrations_dir + os.sep + DBMAKE_CONFIG_DIR + os.sep + DBMAKE_CONFIG_FILE
+
+        # Check that such a "new" connection name doesn't already exist
+        if database.DbConnectionConfig.is_connection_name_exists(config_file, self.new_connection_name):
+            print "Error! Connection name %s already exists." % self.new_connection_name
+            return FAILURE
+
+        # Get auxiliary database connection
+        if self.use_connection_name is not None:
+            use_db_connection_config = database.DbConnectionConfig.read(config_file, self.use_connection_name)
+
+            if use_db_connection_config is False:
+                print "Error! Failed to read the '%s' connection config" % self.use_connection_name
+                return FAILURE
+        else:
+            use_db_connection_config = database.DbConnectionConfig(
+                self.db_host,
+                self.db_name,
+                self.db_user,
+                self.db_password,
+                self.new_connection_name,
+                self.db_port,
+                self.db_type
+            )
+
+        # Get "create database" db task
+        db_tasks_factory = db_tasks.AbstractDbTasksFactory.create(self.db_type)
+        create_db_task = db_tasks_factory.create(db_tasks.DbTaskType.CREATE, use_db_connection_config)
+        result = create_db_task.execute(self.new_dbname, self.drop_existing)
+
+        if not result:
+            return FAILURE
+
+        # Connect to a newly create database and migrate it to the recent revision
+        db_connection_config = database.DbConnectionConfig(
+            use_db_connection_config.host,
+            self.new_dbname,
+            use_db_connection_config.user,
+            use_db_connection_config.password,
+            self.new_connection_name,
+            use_db_connection_config.port
+            # , use_db_connection_config.type
+        )
+
+        # Now let's initialize migrations table
+        init_db_task = db_tasks_factory.create(db_tasks.DbTaskType.INIT, db_connection_config)
+        result = init_db_task.execute()
+
+        if not result:
+            return FAILURE
+
+        if not self.create_empty:
+            try:
+                db_adapter = database.DbAdapterFactory.create(db_connection_config)
+            except psycopg2.OperationalError as e:
+                print "Failed to connect to a database server with specified parameters."
+                print e.message.decode()
+                return FAILURE
+
+            migrations_manager = migrations.MigrationsManager(migrations_dir)
+            result = migrations_manager.migrate_to_revision(migrations_manager.latest_revision(), db_adapter)
+
+            if not result:
+                print "Error! Failed to migrate..."
+                return FAILURE
+
+        # Save newly created database connection details
+        db_connection_config.save(config_file)
+
+        return SUCCESS
+
+    @staticmethod
+    def print_help():
+        print """
+        usage: dbmake create ((-c | --connection-name) <new connection name> (-d | --dbname) <new database name> (-U | --use-connection) <connection name> [options]
+           or: dbmake create ((-c | --connection-name) <new connection name> (-d | --dbname) <new database name> (-h | --host) <database host>
+                    (-D | --use-dbname) <database name> (-u | --user) <username>  (-P | --password) <password>) [options]
+
+        Creates a new database from scratch using either an existing connection details or using specified ones.
+        Once the database has been created all migrations up to the recent one will be applied on it, if other
+        not specified.
+
+        Note:
+        To create a new database, dbmake must first connect to an existing database and under that connection
+        it will  perform the task. Said that, you  MUST provide either an existing connection name related to
+        a database on the same  host, where  you'd like to  create a new   database, or   explicitly specify
+        a connection details.
+
+        Options:
+            -m, --migrations-dir    Where migrations reside
+            -e, --create-empty      Create a new database with only migrations table and store its connection details
+            -U, --use-connection    Name of a connection to use
+            -h, --host              Database host address
+            -D, --use-dbname        Existing database to use
+            -u, --user              Username to use to connect with to an existing database
+            -P, --password          Database user password
+            -p, --port              Database host port to connect to [Default: 5432]
+            -t, --db-type           Database system type. Available values: pgsql
+                                    [Default: PostgreSQL]
+            --drop-existing         Drop database if a such already exists
+
+        Required options:
+            -c, --connection-name   Connection name for a new database
+            -d, --dbname            New database name
+        """
+
+    def _parse_options(self, args):
+
+        options = [
+            '-m', '--migrations-dir', '--migrations-dir=',
+            '-c', '--connection-name', '--connection-name=',
+            '-d', '--dbname', '--dbname=',
+            '-h', '--host', '--host=',
+            '-U', '--use-connection', '--use-connection=',
+            '-e', '--create-empty',
+            '-D', '--use-dbname', '--use-dbname='
+            'u', '--user', '--user=',
+            'P', '--password', '--password=',
+            'p', '--port', '--port=',
+            '-t', '--db-type', '--db-type=',
+            '--drop-existing'
+        ]
+
+        while len(args) > 0:
+            # Parse optional [(-m | --migrations-dir) <path>]
+            if args[0] == '-m' or args[0] == '--migrations-dir':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.migrations_dir = str(args.pop(0))
+
+            elif args[0].startswith("--migrations-dir="):
+                self.migrations_dir = str(args[0].split('=')[1])
+                args.pop(0)
+
+            # Parse new connection name
+            elif args[0] == '-c' or args[0] == '--connection-name':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.new_connection_name = str(args.pop(0))
+
+            elif args[0].startswith("--connection-name="):
+                self.new_connection_name = str(args[0].split('=')[1])
+                args.pop(0)
+
+            # Parse new db name
+            elif args[0] == '-d' or args[0] == '--dbname':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.new_dbname = str(args.pop(0))
+
+            elif args[0].startswith("--dbname="):
+                self.new_dbname = str(args[0].split('=')[1])
+                args.pop(0)
+
+            # Parse connection to use
+            elif args[0] == '-U' or args[0] == '--use-connection':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.use_connection_name = str(args.pop(0))
+
+            elif args[0].startswith("--use-connection="):
+                self.use_connection_name = str(args[0].split('=')[1])
+                args.pop(0)
+
+            # Parse host name
+            elif args[0] == '-h' or args[0] == '--host':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.db_host = str(args.pop(0))
+
+            elif args[0].startswith("--host="):
+                self.db_host = str(args[0].split('=')[1])
+                args.pop(0)
+
+            # Parse use database name
+            elif args[0] == '-D' or args[0] == '--use-dbname':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.use_dbname = str(args.pop(0))
+
+            elif args[0].startswith("--use-dbname="):
+                self.use_dbname = str(args[0].split('=')[1])
+                args.pop(0)
+
+            # Parse database user
+            elif args[0] == '-u' or args[0] == '--user':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.db_user = str(args.pop(0))
+
+            elif args[0].startswith("--user="):
+                self.db_user = str(args[0].split('=')[1])
+                args.pop(0)
+
+            # Parse password
+            elif args[0] == '-P' or args[0] == '--password':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.db_password = str(args.pop(0))
+
+            elif args[0].startswith("--password="):
+                self.db_password = str(args[0].split('=')[1])
+                args.pop(0)
+
+            # Parse database port
+            elif args[0] == '-p' or args[0] == '--port':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.db_port = str(args.pop(0))
+
+            elif args[0].startswith("--port="):
+                self.db_port = str(args[0].split('=')[1])
+                args.pop(0)
+
+            # Parse database type
+            elif args[0] == '-t' or args[0] == '--db-type':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.db_type = str(args.pop(0))
+
+            elif args[0].startswith("--db-type="):
+                self.db_type = str(args[0].split('=')[1])
+                args.pop(0)
+
+            elif args[0].startswith("--drop-existing"):
+                self.drop_existing = True
+                args.pop(0)
+
+            # Parse create empty option
+            elif args[0] == '-empty' or args[0] == '--create-empty':
+                args.pop(0)
+                self.create_empty = True
+
+            elif args[0] not in options:
+                raise BadCommandArguments
+
+            else:
+                args.pop(0)
+
+        # Parse all the remaining necessary options
+        if (
+            len(args) > 0
+            or (
+                self.use_connection_name is None
+                and (
+                    self.db_host is None
+                    or self.db_user is None
+                    or self.db_password is None
+                    or self.use_dbname is None
+                )
+            )
+            or (
+                self.new_connection_name is None
+                or self.new_dbname is None
+            )
+        ):
+            raise BadCommandArguments
+
+        self.__repr__();
+
+    def __repr__(self):
+        print "new_conn_name=%s, new_db_name=%s, use_conn_name=%s" % (
+            self.new_connection_name, self.new_dbname, self.use_connection_name
+        )
+
+
+class DocGenerate(BaseCommand):
+
+    migrations_dir = None
+    destination = None
+
+    def __init__(self, args=[]):
+        BaseCommand.__init__(self, args)
+
+    def execute(self):
+
+        if self.migrations_dir is None:
+            migrations_dir = os.path.abspath(os.getcwd())
+        else:
+            if os.path.exists(self.migrations_dir):
+                migrations_dir = self.migrations_dir
+            else:
+                print "Error! %s  DOESN'T EXIST!" % self.migrations_dir
+                return FAILURE
+
+        if self.destination is None:
+            destination = migrations_dir + os.sep + DOCUMENTATION_DIR
+
+            # Create destination docs directory if doesn't exists
+            if not os.path.exists(destination):
+                os.mkdir(destination)
+        else:
+            if os.path.exists(self.destination):
+                destination = self.destination
+            else:
+                print "Error! %s  DOESN'T EXIST!" % self.migrations_dir
+                return FAILURE
+
+        # Check that destination directory is empty
+        if len(os.listdir(destination)) > 0:
+            print "Error! Documentation destination directory is not empty."
+            return FAILURE
+
+        return SUCCESS
+
+    @staticmethod
+    def print_help():
+        print """
+        usage: dbmake doc-generate [options]
+
+        Options:
+            -m, --migrations-dir    Where migrations reside
+            -d, --destination       Where to save generated documentation [Default: "<migrations dir>/doc"]
+        """
+
+    def _parse_options(self, args=[]):
+
+        if len(args) > 4:
+            raise BadCommandArguments
+
+        if len(args) == 0:
+            return
+
+        # Parse optional [(-m | --migrations-dir) <path>]
+        if args[0] == '-m' or args[0] == '--migrations-dir':
+            if len(args) < 2:
+                raise BadCommandArguments
+            args.pop(0)
+            self.migrations_dir = str(args.pop(0))
+
+        elif args[0].startswith("--migrations-dir="):
+            self.migrations_dir = str(args[0].split('=')[1])
+            args.pop(0)
+
+        # Parse optional [(-d | --destination) <path>]
+        elif args[0] == '-d' or args[0] == '--destination':
+            if len(args) < 2:
+                raise BadCommandArguments
+            args.pop(0)
+            self.destination = str(args.pop(0))
+
+        elif args[0].startswith("--destination="):
+            self.destination = str(args[0].split('=')[1])
+            args.pop(0)
