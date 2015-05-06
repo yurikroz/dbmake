@@ -7,4 +7,4 @@
     -- DBMAKE: MIGRATE DOWN
     ALTER TABLE td_customers DROP COLUMN phone;
 
-    
+  

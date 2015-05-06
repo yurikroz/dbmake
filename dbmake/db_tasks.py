@@ -6,6 +6,7 @@ import psycopg2
 from common import DbmakeException, MIGRATIONS_TABLE, SUCCESS, FAILURE
 from database import DbConnectionConfig, DbAdapterFactory, DbType
 import migrations
+from doc_generator import DbSchemaType, DocGenerator, TableType, ColumnType
 
 
 class BaseDbTask:
@@ -38,6 +39,7 @@ class DbTaskType:
     INIT = "init"
     CREATE = "create"
     DUMP_ZERO_MIGRATION = "dump_zero_migration"
+    DOC_GENERATE = "doc_generate"
 
 
 class BaseDbTasksFactory:
@@ -86,6 +88,8 @@ class PgDbTasksFactory(BaseDbTasksFactory):
             return PgDbDumpZeroMigration(db_connection_config, db_adapter)
         elif task_name == DbTaskType.CREATE:
             return PgDbCreate(db_connection_config, db_adapter)
+        elif task_name == DbTaskType.DOC_GENERATE:
+            return PgDbDocGenerate(db_connection_config, db_adapter)
         else:
             raise DbmakeException('Unknown task name "' + task_name + '"')
 
@@ -210,148 +214,105 @@ class PgDbCreate(BaseDbTask):
         self.db_adapter.commit()
 
 
-class DbCreate(BaseDbTask):
+class PgDbDocGenerate(BaseDbTask):
     """
-    Create new empty database and initializes migration subsystem.
-    Attempts tp drop existing database if drop_existing=True
+    Generates database documentation.
     """
-    MIGRATION_SEPARATOR = "-- DBMAKE: SEPARATOR"
-    MIGRATIONS_TABLE_NAME = "_dbmake_migrations"
 
-    def __init__(self, options, dbconnection=None):
-        BaseDbTask.__init__(self, options)
+    def __init__(self, db_connection_config, db_adapter=None):
+        BaseDbTask.__init__(self, db_connection_config, db_adapter)
 
-        if dbconnection is None:
-            # Initialize database connection
-            #
-            conn_string = "host='" + options.db_host + "' user='" + options.db_user + "' password='" + options.db_password + "'"
-            conn_string += " dbname='" + options.db_user + "'"
+    def execute(self, dbname, revision):
+        """
+        Generates database documentation with a specified doc_generator_. If the latter is not specified
+        then will use a default generator.
+        """
+        import sys
+        print self.__class__.__name__ + " BEGIN"
 
-            # Connect to database
-            try:
-                dbconnection = psycopg2.connect(conn_string)
-            except psycopg2.ProgrammingError as e:
-                msg = e.message.decode()
-                print "Failed to connect to database server with specified parameters.\n"
-                sys.exit(1)
+        db_schema = self._db_schema(dbname, revision)
+        doc_generator_ = DocGenerator(db_schema)
+        html = doc_generator_.generate()
 
-        self.dbconnection = dbconnection
+        print self.__class__.__name__ + " FINISH"
 
-    def execute(self):
-        # Read migrations directory:
-        print os.getcwd()
-        #print os.path.dirname(os.path.abspath(__file__))
+        return html
 
-        migrations_files = []
-        for file_name in os.listdir(os.getcwd()):
-            if file_name.endswith(".sql"):
-                file_name_parts = file_name.split('_')
-                migrations_files.append((file_name_parts[1], file_name))
+    def _db_schema(self, dbname, revision):
+        """
+        Assembles database schema structure as doc_generator.DbSchemaType class
+        :return: DbSchemaType
+        """
 
-        if migrations_files.__len__() > 0:
-            # Sort migration files by version (timestamp - in the future)
-            migrations_files = sorted(migrations_files, key=lambda migration_file: migration_file[0])
-            #migration_files = migration_files.sort()
-            print "Found next migrations file in current working directory:"
-            print migrations_files
-        else:
-            print "Didn't find any migrations in current working directory"
-            sys.exit(1)
+        def _columns(dbname_, table, db_adapter, schema='public'):
+            """
+            Returns a list of table's columns
 
-        logging.info("db:create BEGIN")
-        print "db:create BEGIN"
+            :param table: TableType
+            :param db_adapter:
+            """
+            query_table_columns_with_descriptions = """
+            SELECT
+                cols.column_name,
+                cols.data_type,
+                (
+                    SELECT
+                        pg_catalog.col_description(c.oid, cols.ordinal_position::int)
+                    FROM
+                        pg_catalog.pg_class c
+                    WHERE
+                        c.oid = (SELECT '{table_name}'::regclass::oid) AND
+                        c.relname = cols.table_name
+                ) as column_comment
 
-        # For each DB node create database
-        # uniq_hosts = set([x['hostname'] for x in self.config.db_nodes()])
-        try:
-            self.dbconnection.set_isolation_level(0)
-            if self.options.drop_existing is True:
-                self._drop_db()
-            self._create_db()
+            FROM
+                information_schema.columns cols
+            WHERE
+                cols.table_catalog = '{dbname}' AND
+                cols.table_name    = '{table_name}'    AND
+                cols.table_schema  = '{schema_name}';
+            """.format(table_name=table.name, dbname=dbname_, schema_name=schema)
 
-            # Now let's disconnect from the DBA's default database and connect to the newly created database
-            self.dbconnection.close()
-            conn_string = "host='" + self.options.db_host + "' user='" + self.options.db_user + \
-                          "' password='" + self.options.db_password + "'" + " dbname='" + self.options.db_name + "'"
-            # Connect to database
-            try:
-                self.dbconnection = psycopg2.connect(conn_string)
-            except psycopg2.ProgrammingError as e:
-                msg = e.message.decode()
-                print "Failed to connect to newly created database"
-                sys.exit(1)
+            result = db_adapter.fetch_dict(query_table_columns_with_descriptions)
 
-            self._init_migrations(migrations_files)
-        except:
-            exc_info = sys.exc_info()
-            logging.error("%s: %s" % (exc_info[0], exc_info[1]) )
-            print "Please fix error and try again"
-            traceback.print_exc()
-            sys.exit(1)
+            columns = []
+            for column_ in result:
+                column = ColumnType()
+                column.name = column_['column_name']
+                column.data_type = column_['data_type']
+                column.comment = column_['column_comment']
+                columns.append(column)
 
-        logging.info("db:create FINISH")
-        print "db:create FINISH"
+            return columns
 
-    # ----------------------------------------------------------
-    def _create_db(self):
-        logging.info("Creating database %s at %s" % (self.options.db_name, self.options.db_host))
-        print "Creating database %s at %s" % (self.options.db_name, self.options.db_host)
+        def _tables(dbname_, db_adapter, schema='public'):
+            """
+            Returns a list of schema tables
+            """
+            query_tables_with_descriptions = """
+            SELECT table_name, pg_catalog.obj_description(('public.'||table_name)::regclass::oid) AS description
+              FROM information_schema.tables
+              WHERE table_schema='%s'
+            """ % schema
 
-        cursor = self.dbconnection.cursor()
-        cursor.execute("create database %s;" % self.options.db_name)
-        self.dbconnection.commit()
+            result = db_adapter.fetch_dict(query_tables_with_descriptions)
 
-    # ----------------------------------------------------------
-    def _drop_db(self):
-        logging.info("Dropping database %s at %s" % (self.options.db_name, self.options.db_host))
-        print "Dropping database %s at %s" % (self.options.db_name, self.options.db_host)
+            tables = []
+            for table_ in result:
+                table = TableType()
+                table.name = table_['table_name']
+                table.comment = table_['description']
+                table.columns = _columns(dbname_, table, db_adapter)
+                tables.append(table)
 
-        cursor = self.dbconnection.cursor()
-        cursor.execute("drop database %s;" % self.options.db_name)
-        self.dbconnection.commit()
+            return tables
 
-    def _init_migrations(self, migrations_files):
-        cursor = self.dbconnection.cursor()
+        # Create schema instance
+        db_schema = DbSchemaType()
+        db_schema.dbname = dbname
+        db_schema.revision = revision
 
-        query = """
-            CREATE TABLE %s (
-                id      SERIAL,
-                version INTEGER NOT NULL,
-                file    character varying(100),
-                create_date TIMESTAMP DEFAULT NOW() NOT NULL
-            )
-            """ % self.MIGRATIONS_TABLE_NAME
+        # Get tables list
+        db_schema.tables = _tables(dbname, self.db_adapter)
 
-        cursor = self.dbconnection.cursor()
-        cursor.execute(query)
-        self.dbconnection.commit()
-
-        for migration_file_tuple in migrations_files:
-            # Get migration file contents
-            migration_file = migration_file_tuple[1]
-            f = open(migration_file, 'r')
-            query = f.read()
-
-            print query
-
-            # Now let's separate UP migration from DOWN migration statements...
-            query = query.split(self.MIGRATION_SEPARATOR)[0]
-
-            print "THis is MIGRATION UP:"
-            print query
-
-            # Migrate...
-            print "Performing migration to version: " + migration_file_tuple[0]
-
-            cursor.execute(query)
-            self.dbconnection.commit()
-
-            # Now let's add a new entry into migrations table
-            query = "INSERT INTO " + self.MIGRATIONS_TABLE_NAME + " (version, file) VALUES ('" + migration_file_tuple[0] + "', '" + migration_file_tuple[1] + "')"
-            cursor.execute(query)
-            self.dbconnection.commit()
-
-            #exit(1)
-
-
-        self.dbconnection.commit()
+        return db_schema

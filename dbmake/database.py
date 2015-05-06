@@ -11,6 +11,9 @@ class DbType:
     ORACLE = "oracle"
     POSTGRES = "pgsql"
 
+    def __init__(self):
+        pass
+
 
 class DbConnectionConfig:
 

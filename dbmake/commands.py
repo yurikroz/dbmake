@@ -1292,6 +1292,8 @@ class Create(BaseCommand):
 
 class DocGenerate(BaseCommand):
 
+    # Connection name of database against which the documentation will be generated
+    connection_name = None
     migrations_dir = None
     destination = None
 
@@ -1322,17 +1324,48 @@ class DocGenerate(BaseCommand):
                 print "Error! %s  DOESN'T EXIST!" % self.migrations_dir
                 return FAILURE
 
-        # Check that destination directory is empty
-        if len(os.listdir(destination)) > 0:
-            print "Error! Documentation destination directory is not empty."
+        config_file = migrations_dir + os.sep + DBMAKE_CONFIG_DIR + os.sep + DBMAKE_CONFIG_FILE
+        if not os.path.exists(config_file):
+            print "Error! Can't find dbmake configuration file."
             return FAILURE
+
+        # Get database adapter
+        db_connection_config = database.DbConnectionConfig.read(config_file, self.connection_name)
+        db_adapter = database.DbAdapterFactory.create(db_connection_config)
+
+        # Get documentation filename
+        migrations_dao = migrations.MigrationsDao(db_adapter)
+        migration_vo = migrations_dao.find_most_recent()
+        documentation_file_name = db_connection_config.dbname + '_' + str(migration_vo.revision) + '.html'
+        documentation_file = destination + os.sep + documentation_file_name
+
+        # Check that destination directory doesn't contain such a document as the generated documentation
+        if os.path.exists(documentation_file) > 0:
+            print "Error! Documentation file %s already exists in the destination directory." % documentation_file_name
+            return FAILURE
+
+        # Generate documentation
+        db_tasks_factory = db_tasks.AbstractDbTasksFactory.create(database.DbType.POSTGRES)
+        doc_generate_task = db_tasks_factory.create(db_tasks.DbTaskType.DOC_GENERATE, db_connection_config, db_adapter)
+
+        documentation = doc_generate_task.execute(db_connection_config.dbname, str(migration_vo.revision))
+
+        try:
+            f = open(documentation_file, 'w+')
+        except IOError as e:
+            print "Failure"
+            print e.message.decode()
+            return False
+        else:
+            with f:
+                f.write(documentation)
 
         return SUCCESS
 
     @staticmethod
     def print_help():
         print """
-        usage: dbmake doc-generate [options]
+        usage: dbmake doc-generate (-c | --connection-name) <connection name> [options]
 
         Options:
             -m, --migrations-dir    Where migrations reside
@@ -1341,30 +1374,53 @@ class DocGenerate(BaseCommand):
 
     def _parse_options(self, args=[]):
 
-        if len(args) > 4:
+        if len(args) == 0:
             raise BadCommandArguments
 
-        if len(args) == 0:
-            return
+        options = [
+            '-m', '--migrations-dir', '--migrations-dir=',
+            '-d', '--destination', '--destination=',
+            '-c', '--connection-name', '--connection-name='
+        ]
 
-        # Parse optional [(-m | --migrations-dir) <path>]
-        if args[0] == '-m' or args[0] == '--migrations-dir':
-            if len(args) < 2:
+        while len(args) > 0:
+            # Parse optional [(-m | --migrations-dir) <path>]
+            if args[0] == '-m' or args[0] == '--migrations-dir':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.migrations_dir = str(args.pop(0))
+
+            elif args[0].startswith("--migrations-dir="):
+                self.migrations_dir = str(args[0].split('=')[1])
+                args.pop(0)
+
+            # Parse optional [(-d | --destination) <path>]
+            elif args[0] == '-d' or args[0] == '--destination':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.destination = str(args.pop(0))
+
+            elif args[0].startswith("--destination="):
+                self.destination = str(args[0].split('=')[1])
+                args.pop(0)
+
+            # Parse -c | --connection-name <connection name>
+            elif args[0] == '-c' or args[0] == '--connection':
+                if len(args) < 2:
+                    raise BadCommandArguments
+                args.pop(0)
+                self.connection_name = str(args.pop(0))
+
+            elif args[0].startswith("--connection_name="):
+                self.connection_name = str(args[0].split('=')[1])
+                args.pop(0)
+
+            elif args[0] not in options:
                 raise BadCommandArguments
-            args.pop(0)
-            self.migrations_dir = str(args.pop(0))
 
-        elif args[0].startswith("--migrations-dir="):
-            self.migrations_dir = str(args[0].split('=')[1])
-            args.pop(0)
+        print self.__repr__()
 
-        # Parse optional [(-d | --destination) <path>]
-        elif args[0] == '-d' or args[0] == '--destination':
-            if len(args) < 2:
-                raise BadCommandArguments
-            args.pop(0)
-            self.destination = str(args.pop(0))
-
-        elif args[0].startswith("--destination="):
-            self.destination = str(args[0].split('=')[1])
-            args.pop(0)
+    def __repr__(self):
+        return "conn_name=%s" % self.connection_name
