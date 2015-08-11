@@ -160,7 +160,7 @@ class Init(BaseCommand):
             #    db_adapter
             # )
             migrations_manager = migrations.MigrationsManager(self.migrations_dir)
-            result = migrations_manager.migrate_to_revision(0)
+            result = migrations_manager.migrate_to_revision(0, db_adapter)
 
             if result is False:
                 print "Error! Failed to apply MIGRATION-ZERO."
@@ -565,7 +565,7 @@ class Status(BaseCommand):
             except psycopg2.OperationalError as e:
                 print "%s: Failed to connect database %s on host %s:%s, user: %s" % (
                     db_connection_config.connection_name,
-                    db_connection_config.db_name,
+                    db_connection_config.dbname,
                     db_connection_config.host,
                     db_connection_config.port,
                     db_connection_config.user

@@ -1,0 +1,49 @@
+
+
+Demo #1: Getting DB under a version control
+-------------------------------------------
+Initially we have 1 production database and we want to get it under version control with dbmake.
+
+
+
+Demo #2: Creating another DB
+----------------------------
+Additionally to the first DB we want to add another instance of the database for test deployment.
+
+dbmake 
+
+
+
+DATABASES
+---------
+
+database:
+  
+  description: -
+    Initialy contains 3 tables
+
+  dbname:   demo_1
+  user:     splanger
+  password: dd123a1a2
+
+  tables:
+    users:
+      id
+      username
+      password
+      update_date
+      create_date
+
+    blogs:
+      id
+      user_id
+      blog_name
+      update_date
+      create_date
+
+    posts:
+      id
+      blog_id
+      update_date
+      create_date
+    

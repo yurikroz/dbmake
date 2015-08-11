@@ -2,7 +2,7 @@
 
 import sys
 from common import FAILURE, SUCCESS
-from dbmake_cli import get_command, print_help
+from dbmake_cli import get_command, print_help, command_to_class_name
 from helper import get_class, underscore_to_camelcase
 from common import CommandNotExists, BadCommandArguments, DBMAKE_VERSION
 
@@ -24,12 +24,14 @@ class App:
         if command_name == '-h' or command_name == '--help':
             if args.__len__() > 0:
                 command_name = args.pop(0)
-                command_name = underscore_to_camelcase(command_name)
+                # command_name = underscore_to_camelcase(command_name)
+                command_class_name = command_to_class_name(command_name)
                 try:
-                    command_class = get_class("commands." + command_name)
+                    command_name
+                    command_class = get_class("commands." + command_class_name)
                     command_class.print_help()
                 except AttributeError:
-                    print "Error! No such a command %s" % command_name
+                    print "Error! No such a command %s" % command_class_name
                     print_help()
                     return FAILURE
                 return SUCCESS

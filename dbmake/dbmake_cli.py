@@ -19,7 +19,7 @@ def command_to_class_name(command_name):
     :param command_name:
     :return: str
     """
-    class_name = helper.camelcase(command_name, "_")
+    class_name = helper.camelcase(command_name, delimeter="_")
     class_name = helper.camelcase(class_name, "-")
 
     return class_name
