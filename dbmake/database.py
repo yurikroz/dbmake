@@ -280,7 +280,7 @@ class PgAdapter(BaseDbAdapter):
 
     def _connect(self):
         # Initialize database connection
-        conn_string = "host='%s' dbname='%s' user='%s' password='%s'" % (
+        conn_string = "host='%s' dbname='%s' user='%s' password='%s' connect_timeout='3'" % (
             self._db_connection_config.host,
             self._db_connection_config.dbname,
             self._db_connection_config.user,

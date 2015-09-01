@@ -570,8 +570,11 @@ class Status(BaseCommand):
                     db_connection_config.port,
                     db_connection_config.user
                 )
-                print e.message.decode()
-                return FAILURE
+                #print e.message.decode()
+
+                # Continue to a next connection
+                continue
+                #return FAILURE
 
             migrations_dao = migrations.MigrationsDao(db_adapter)
 
