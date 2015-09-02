@@ -653,6 +653,7 @@ class Forget(BaseCommand):
 
     connection_name = None
     migrations_dir = None
+    force = False
 
     def __init__(self, args=[]):
         BaseCommand.__init__(self, args)
@@ -682,39 +683,48 @@ class Forget(BaseCommand):
         try:
             db_adapter = database.DbAdapterFactory.create(db_connection_config)
         except psycopg2.OperationalError as e:
-            print "%s: Failed to connect database %s on host %s:%s, user: %s"% (
+            print "%s: Failed to connect database %s on host %s:%s, user: %s" % (
                 db_connection_config.connection_name,
-                db_connection_config.db_name,
+                db_connection_config.dbname,
                 db_connection_config.host,
                 db_connection_config.port,
                 db_connection_config.user
             )
-            print e.message.decode()
-            return FAILURE
+            if self.force is True:
+                db_adapter = None
+            else:
+                return FAILURE
 
-        migrations_dao = migrations.MigrationsDao(db_adapter)
+        if db_adapter is not None:
+            migrations_dao = migrations.MigrationsDao(db_adapter)
 
-        if migrations_dao.is_migration_table_exists() is True:
-            migrations_dao.drop_migrations_table()
+            if migrations_dao.is_migration_table_exists() is True:
+                migrations_dao.drop_migrations_table()
 
-        db_adapter.disconnect()
+            db_adapter.disconnect()
 
         database.DbConnectionConfig.delete(config_file, self.connection_name)
 
-        print 'Connection "%s" has been forgotten.' % self.connection_name
+        # Print a result message
+        message = 'Connection "%s" has been forgotten.' % self.connection_name
+        if self.force is True:
+            print message + ' Using force.'
+        else:
+            print message
 
         return SUCCESS
 
     @staticmethod
     def print_help():
         print """
-        usage: dbmake forget [(-m | --migrations-dir) <path>] <connection name>
+        usage: dbmake forget [(-m | --migrations-dir) <path>] <connection name> [options]
 
         Drops migrations table in database associated with <connection name> and removes
         connection details from dbmake connections config file
 
         Options:
             -m, --migrations-dir    Where migrations reside
+            -f, --force             Forget a connection even if a database is unreachable
         """
 
     def _parse_options(self, args):
@@ -735,6 +745,11 @@ class Forget(BaseCommand):
 
         # Parse <connection name>
         self.connection_name = args.pop(0)
+
+        while len(args) > 0:
+            if args[0] == '-f' or args[0] == '--force':
+                self.force = True
+                args.pop(0)
 
         # Parse all the remaining necessary options
         if len(args) > 0:
