@@ -1,4 +1,9 @@
 #!/bin/bash
 
-BASEDIR=$(dirname $0)
-python $BASEDIR/../dbmake/dbmake.py $*
+## Get real path of current script file ##
+_script="$(readlink -f ${BASH_SOURCE[0]})"
+
+## Delete last component from $_script ##
+_mydir="$(dirname $_script)"
+
+python $_mydir/../dbmake/dbmake.py $*
