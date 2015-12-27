@@ -9,6 +9,9 @@ from common import CommandNotExists, BadCommandArguments, DBMAKE_VERSION
 
 class App:
 
+    def __init__(self):
+        pass
+
     @staticmethod
     def run(args=[]):
 
@@ -55,5 +58,8 @@ class App:
         return result
 
 
-if __name__ == "__main__":
+def main():
     sys.exit(App.run(sys.argv))
+
+if __name__ == "__main__":
+    main()

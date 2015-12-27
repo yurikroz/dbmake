@@ -17,7 +17,7 @@ setup(
     # Versions should comply with PEP440.  For a discussion on single-sourcing
     # the version across setup.py and the project code, see
     # https://packaging.python.org/en/latest/single_source_version.html
-    version='0.1.0',
+    version='0.1.2',
 
     description='DBAs friendly database schema migration tool',
 
@@ -76,9 +76,10 @@ setup(
     # pip to create the appropriate form of executable for the target platform.
     entry_points={
         'console_scripts': [
-            'dbmake=dbmake:dbmake',
-        ],
+           'dbmake=dbmake.dbmake:main',
+       ],
     },
+    # scripts=['bin/dbmake'],
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). You can install these using the following syntax,
