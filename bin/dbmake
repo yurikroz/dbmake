@@ -7,3 +7,4 @@ _script="$(readlink -f ${BASH_SOURCE[0]})"
 _mydir="$(dirname $_script)"
 
 python $_mydir/../dbmake/dbmake.py $*
+#python -m $_mydir/../dbmake $*

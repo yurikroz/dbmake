@@ -5,7 +5,7 @@ DBMAKE_CONFIG_DIR = ".dbmake"
 DBMAKE_CONFIG_FILE = "databases.json"
 MIGRATIONS_TABLE = "_dbmake_migrations"
 DOCUMENTATION_DIR = "doc"
-DBMAKE_VERSION = 'dbmake 1.1a'
+DBMAKE_VERSION = 'dbmake 0.1.2'
 
 FAILURE = 1
 SUCCESS = 0

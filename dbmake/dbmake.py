@@ -2,18 +2,17 @@
 
 import sys
 from common import FAILURE, SUCCESS
-from dbmake_cli import get_command, print_help, command_to_class_name
-from helper import get_class, underscore_to_camelcase
+from dbmake_cli import get_command, print_help, get_command_class_reference
 from common import CommandNotExists, BadCommandArguments, DBMAKE_VERSION
 
 
 class App:
 
     def __init__(self):
-        pass
+        self.ide_stop_bothering_with_static_method = "!!!"
 
-    @staticmethod
-    def run(args=[]):
+    def run(self, args=sys.argv):
+        self.ide_stop_bothering_with_static_method = "!!!"
 
         # Pop the script's name from arguments and fetch the command name
         try:
@@ -27,14 +26,11 @@ class App:
         if command_name == '-h' or command_name == '--help':
             if args.__len__() > 0:
                 command_name = args.pop(0)
-                # command_name = underscore_to_camelcase(command_name)
-                command_class_name = command_to_class_name(command_name)
                 try:
-                    command_name
-                    command_class = get_class("commands." + command_class_name)
+                    command_class = get_command_class_reference(command_name)
                     command_class.print_help()
                 except AttributeError:
-                    print "Error! No such a command %s" % command_class_name
+                    print "Error! No such a command %s" % command_name
                     print_help()
                     return FAILURE
                 return SUCCESS
@@ -50,16 +46,20 @@ class App:
             command = get_command(command_name, args)
             result = command.execute()
         except CommandNotExists:
+            print "Unrecognized command!"
             print_help()
             return FAILURE
         except BadCommandArguments:
+            print "Bad command arguments"
             return FAILURE
 
         return result
 
 
-def main():
-    sys.exit(App.run(sys.argv))
+def main(argv=sys.argv):
+    app = App()
+    sys.exit(app.run(argv))
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main(sys.argv))
+
