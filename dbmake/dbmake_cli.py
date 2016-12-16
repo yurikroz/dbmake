@@ -45,12 +45,17 @@ def get_command_class_reference(command_name):
         raise CommandNotExists
 
 
-def get_command(command_name, args=[]):
+def get_command(command_name, args=None):
     """
     Returns Application command instance corresponding to a passed command_name.
 
+    :param args: Command arguments list
+
     :param str command_name: Command name as it has been parsed from sys.argv
     """
+
+    if args is None:
+        args = []
 
     command_class_reference = get_command_class_reference(command_name)
 
