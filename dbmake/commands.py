@@ -1,13 +1,11 @@
-
-import sys
 import os
 import time
 import getpass
 import psycopg2
-import database
-import db_tasks
-import migrations
-from common import MIGRATIONS_TABLE, BadCommandArguments, FAILURE, SUCCESS, DBMAKE_CONFIG_DIR, \
+from . import database
+from . import db_tasks
+from . import migrations
+from .common import MIGRATIONS_TABLE, BadCommandArguments, FAILURE, SUCCESS, DBMAKE_CONFIG_DIR, \
     DBMAKE_CONFIG_FILE, ZERO_MIGRATION_FILE_NAME, ZERO_MIGRATION_NAME, DOCUMENTATION_DIR
 
 
