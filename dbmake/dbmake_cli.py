@@ -83,7 +83,7 @@ def get_command(command_name, args=[]):
 
 
 def print_help():
-    print """
+    print("""
     dbmake - Database Schema Migration Tool
 
     usage: dbmake <command> [options]
@@ -99,4 +99,4 @@ def print_help():
          create             Create a new empty database and initializes migrations subsystem in it.
          new-migration      Create a new migration file
          doc-generate       Generate a database documentation
-    """
+    """)
