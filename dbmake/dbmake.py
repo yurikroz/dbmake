@@ -1,9 +1,10 @@
 #!/usr/bin/python
 
 import sys
-from common import FAILURE, SUCCESS
-from dbmake_cli import get_command, print_help, get_command_class_reference
-from common import CommandNotExists, BadCommandArguments, DBMAKE_VERSION
+
+from .common import FAILURE, SUCCESS
+from .dbmake_cli import get_command, print_help, get_command_class_reference
+from .common import CommandNotExists, BadCommandArguments, DBMAKE_VERSION
 
 
 class App:
