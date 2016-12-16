@@ -74,8 +74,6 @@ class PgDbTasksFactory(BaseDbTasksFactory):
     """
     A database tasks factory, produces PostgreSQL database tasks instances
     """
-    def __init__(self):
-        pass
 
     @classmethod
     def create(cls, task_name, db_connection_config, db_adapter=None):
