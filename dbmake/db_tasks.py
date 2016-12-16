@@ -104,7 +104,7 @@ class PgDbInit(BaseDbTask):
         """
         print("PgDbInit START")
 
-        def _create_migrations_table(db_adapter):
+        def _create_migrations_table():
             query = """
             CREATE TABLE %s (
                 id SERIAL,
@@ -123,7 +123,7 @@ class PgDbInit(BaseDbTask):
             return False
 
         print("Creating migrations table")
-        _create_migrations_table(self.db_adapter)
+        _create_migrations_table()
         print("PgDbInit FINISH")
 
         return True
