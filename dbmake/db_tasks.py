@@ -1,12 +1,10 @@
-import logging
-import sys
 import os
-import traceback
 import psycopg2
-from common import DbmakeException, MIGRATIONS_TABLE, SUCCESS, FAILURE
-from database import DbConnectionConfig, DbAdapterFactory, DbType
-import migrations
-from doc_generator import DbSchemaType, DocGenerator, TableType, ColumnType
+
+from . import migrations
+from .common import DbmakeException, MIGRATIONS_TABLE, FAILURE
+from .database import DbConnectionConfig, DbAdapterFactory, DbType
+from .doc_generator import DbSchemaType, DocGenerator, TableType, ColumnType
 
 
 class BaseDbTask:
