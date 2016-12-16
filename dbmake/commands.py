@@ -1019,7 +1019,7 @@ class Create(BaseCommand):
         else:
             use_db_connection_config = database.DbConnectionConfig(
                 self.db_host,
-                self.db_name,
+                self.use_dbname,
                 self.db_user,
                 self.db_password,
                 self.new_connection_name,
