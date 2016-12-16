@@ -8,9 +8,8 @@ TODO:
 Implement "reset" command (Drop a database, recreate it and load the recent schema revision into it.)
 """
 
-import helper
-import commands
-from common import BadCommandArguments, CommandNotExists
+from . import helper, commands
+from .common import BadCommandArguments, CommandNotExists
 
 
 def command_to_class_name(command_name):
