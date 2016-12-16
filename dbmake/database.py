@@ -25,7 +25,7 @@ class DbConnectionConfig:
     connection_name = None
     # db_type = DbType.POSTGRES
 
-    def __init__(self, host, dbname, user, password, connection_name, port="5432", db_type=DbType.POSTGRES):
+    def __init__(self, host, dbname, user, password, connection_name, port="5432"):
         self.host = host
         self.port = port
         self.dbname = dbname
@@ -140,6 +140,7 @@ class DbConnectionConfig:
         """
         Reads a database connections configuration file and returns a list
         of database connections as a list of dictionaries
+        :param connection_name: Connection name
         :param config_file: A full path to a config file
         :return: List of dictionaries or False on failure
         """
@@ -333,7 +334,7 @@ class PgAdapter(BaseDbAdapter):
 
     def fetch_single_dict(self, sql_string):
         """
-        Executes an SQL string and returns tthe only record represented by dictionary
+        Executes an SQL string and returns the only record represented by dictionary
         :param sql_string: str
         """
         with self._connection.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
