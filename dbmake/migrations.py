@@ -1,7 +1,7 @@
-
 import os
 import re
-import common
+
+from . import common
 
 
 class MigrationVO:
