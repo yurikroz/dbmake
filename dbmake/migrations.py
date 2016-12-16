@@ -210,7 +210,6 @@ class MigrationsManager:
         :param target_revision: Migration revision to migrate to
         :return:
         """
-        revision = int(target_revision)
         migrations = self._migrations_list()
 
         if len(migrations) == 0:
