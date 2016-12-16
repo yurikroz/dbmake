@@ -223,7 +223,6 @@ class PgDbDocGenerate(BaseDbTask):
         Generates database documentation with a specified doc_generator_. If the latter is not specified
         then will use a default generator.
         """
-        import sys
         print(self.__class__.__name__ + " BEGIN")
 
         db_schema = self._db_schema(dbname, revision)
