@@ -1,4 +1,3 @@
-
 class ColumnType:
     """
     Database table column
@@ -39,7 +38,6 @@ class DbSchemaType:
 
 
 class DocGenerator:
-
     db_schema = None
 
     def __init__(self, db_schema):
@@ -83,7 +81,7 @@ class DocGenerator:
 
             # Table's description
             if table.comment:
-                 tables += '<p>%s</p>' % table.comment
+                tables += '<p>%s</p>' % table.comment
             else:
                 tables += '<p></p>'
 
