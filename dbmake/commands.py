@@ -1023,8 +1023,7 @@ class Create(BaseCommand):
                 self.db_user,
                 self.db_password,
                 self.new_connection_name,
-                self.db_port,
-                self.db_type
+                self.db_port
             )
 
         # Get "create database" db task
