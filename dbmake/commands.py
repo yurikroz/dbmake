@@ -14,10 +14,12 @@ class BaseCommand:
     A base class for all application's command line commands
     """
 
-    def __init__(self, args=[]):
+    def __init__(self, args=None):
         """
         :param args: a list of applications command line arguments
         """
+        if args is None:
+            args = []
         self._parse_options(args)
 
     def print_help(self):
@@ -29,7 +31,7 @@ class BaseCommand:
         """
         raise NotImplementedError
 
-    def _parse_options(self, args=[]):
+    def _parse_options(self, args):
         """
         Parses all command options from command line arguments
         """
@@ -47,9 +49,6 @@ class Init(BaseCommand):
     db_connection_config = None
     migrations_dir = None
     drop_existing = False
-
-    def __init__(self, args=[]):
-        BaseCommand.__init__(self, args)
 
     def execute(self):
         if self.migrations_dir is None:
@@ -70,25 +69,25 @@ class Init(BaseCommand):
         try:
             db_adapter = database.DbAdapterFactory.create(self.db_connection_config)
         except psycopg2.OperationalError as e:
-            print "Failed to connect to a database server with specified parameters."
-            print e.message.decode()
+            print("Failed to connect to a database server with specified parameters.")
+            print(e.message.decode())
             return FAILURE
 
         # Check if dbmake migrations table is already exists in a database
         try:
             schema_table_list = db_adapter.get_tables()
         except psycopg2.Error as e:
-            print e.message.decode()
+            print(e.message.decode())
             return FAILURE
 
         if MIGRATIONS_TABLE in schema_table_list:
-            print 'Error! "%s" table is already exists in database.' % MIGRATIONS_TABLE
+            print('Error! "%s" table is already exists in database.' % MIGRATIONS_TABLE)
             return FAILURE
 
         # Check that migrations directory has no ZERO-MIGRATION file while database is not empty
         zero_migration_file = self.migrations_dir + os.sep + ZERO_MIGRATION_FILE_NAME
         if os.path.exists(zero_migration_file) and len(schema_table_list) > 0:
-            print "Error! Database is not empty while ZERO-MIGRATION file already exists."
+            print("Error! Database is not empty while ZERO-MIGRATION file already exists.")
             return FAILURE
 
         # Now let's check if Zero-Migration exists and if true, check whether database is empty
@@ -109,7 +108,7 @@ class Init(BaseCommand):
             result = dump_zero_migration_task.execute(zero_migration_file)
 
             if not result:
-                print "Failed to dump database schema into ZERO-MIGRATION file."
+                print("Failed to dump database schema into ZERO-MIGRATION file.")
                 return FAILURE
 
             remove_zero_migration_file_on_failure = True
@@ -161,7 +160,7 @@ class Init(BaseCommand):
             result = migrations_manager.migrate_to_revision(0, db_adapter)
 
             if result is False:
-                print "Error! Failed to apply MIGRATION-ZERO."
+                print("Error! Failed to apply MIGRATION-ZERO.")
                 return FAILURE
 
         return SUCCESS
@@ -172,31 +171,30 @@ class Init(BaseCommand):
         :return: Returns True on success, otherwise returns False
         """
 
-        print "Check if .dbmake directory does not exist in: %s ..." % self.migrations_dir,
+        print("Check if .dbmake directory does not exist in: %s ..." % self.migrations_dir)
 
         dbmake_config_dir = str(self.migrations_dir) + os.sep + DBMAKE_CONFIG_DIR
         if not os.path.exists(dbmake_config_dir):
-            print "Not exists"
-            print "Create .dbmake directory... ",
+            print("Not exists")
+            print("Create .dbmake directory... ")
 
             try:
                 os.makedirs(dbmake_config_dir)
             except OSError as e:
                 msg = e.message.decode()
-                print "Failure"
-                print msg
+                print("Failure")
+                print(msg)
                 return False
             else:
-                print "OK"
+                print("OK")
         else:
-            print "Exists"
+            print("Exists")
 
         return True
 
-    @staticmethod
-    def print_help():
+    def print_help(self):
         # --no-dump               Don't dump database structure into ZERO MIGRATION file
-        print """
+        print("""
         usage: dbmake init [(-m | --migrations-dir) <path>] <connection name> (options) [OPTIONAL]
 
         Note:
@@ -211,9 +209,9 @@ class Init(BaseCommand):
             -h, --host      Database server host
             -d, --dbname    Database name
             -u, --user      Database username
-        """
+        """)
 
-    def _parse_options(self, args=[]):
+    def _parse_options(self, args):
         if len(args) == 0:
             raise BadCommandArguments
 
@@ -286,7 +284,7 @@ class Init(BaseCommand):
             else:
                 args.pop(0)
 
-        print self.__repr__()
+        print(self.__repr__())
 
         # Create DbConnectionConfig from parsed arguments
         if (
@@ -314,13 +312,10 @@ class Migrate(BaseCommand):
     migration_direction = _MIGRATE_UP
     migration_steps = None
 
-    def __init__(self, args=[]):
-        BaseCommand.__init__(self, args)
-
     def execute(self):
 
         if self.dry_run:
-            print "Running DRY"
+            print("Running DRY")
 
         if self.migrations_dir is None:
             self.migrations_dir = os.path.abspath(os.getcwd())
@@ -335,7 +330,7 @@ class Migrate(BaseCommand):
             connections_configs = database.DbConnectionConfig.read_all(config_file)
 
         if connections_configs is False or connections_configs[0] is False:
-            print "Failed to read config file"
+            print("Failed to read config file")
             return FAILURE
 
         migrations_manager = migrations.MigrationsManager(self.migrations_dir)
@@ -351,14 +346,14 @@ class Migrate(BaseCommand):
             try:
                 db_adapter = database.DbAdapterFactory.create(db_connection_config)
             except psycopg2.OperationalError as e:
-                print "%s: Failed to connect database %s on host %s:%s, user: %s" % (
-                    db_connection_config.connection_name,
-                    db_connection_config.db_name,
-                    db_connection_config.host,
-                    db_connection_config.port,
-                    db_connection_config.user
-                )
-                print e.message.decode()
+                print("%s: Failed to connect database %s on host %s:%s, user: %s" % (
+                        db_connection_config.connection_name,
+                        db_connection_config.db_name,
+                        db_connection_config.host,
+                        db_connection_config.port,
+                        db_connection_config.user
+                     ))
+                print(e.message.decode())
                 continue
 
             migrations_dao = migrations.MigrationsDao(db_adapter)
@@ -377,14 +372,14 @@ class Migrate(BaseCommand):
                     target_revision = self.target_revision
 
                     if not migrations_manager.is_revision_exists(target_revision):
-                        print "Error! Target revision's migration file %s was not found!" % target_revision
+                        print("Error! Target revision's migration file %s was not found!" % target_revision)
                         return FAILURE
 
                 elif self.migration_steps is not None:
 
                     if current_revision not in revisions:
-                        print "%s: Error! Current revision's migration wasn't found." \
-                              % db_connection_config.connection_name
+                        print("%s: Error! Current revision's migration wasn't found." \
+                                % db_connection_config.connection_name)
                         return FAILURE
                     else:
                         current_index = revisions.index(current_revision)
@@ -408,27 +403,24 @@ class Migrate(BaseCommand):
                         elif self.migration_direction == self._MIGRATE_DOWN:
                             target_revision = revisions[current_index - self.migration_steps]
                         else:
-                            print "%s: Error! Can't define target revision" % db_connection_config.connection_name
+                            print("%s: Error! Can't define target revision" % db_connection_config.connection_name)
                             return FAILURE
 
                 # Migrate...
-                print "%s: Migrating... (target revision:  %s)" % (
-                    db_connection_config.connection_name,
-                    target_revision
-                )
+                print ("%s: Migrating... (target revision:  %s)" % (db_connection_config.connection_name,
+                                                                    target_revision))
                 migrations_manager.migrate_to_revision(target_revision, db_adapter, self.dry_run)
-                print "-" * 20
+                print("-" * 20)
             else:
-                print "%s: Error! No migrations table has been found." % db_connection_config.connection_name
+                print("%s: Error! No migrations table has been found." % db_connection_config.connection_name)
 
             db_adapter.disconnect()
 
         return SUCCESS
 
-    @staticmethod
-    def print_help():
+    def print_help(self):
         # --no-dump               Don't dump database structure into ZERO MIGRATION file
-        print """
+        print("""
         usage: dbmake migrate [options] [(--up | --down) <steps> | (-r | --revision=)<value>]
 
         Note:
@@ -443,9 +435,9 @@ class Migrate(BaseCommand):
             --up=<steps>                          Number of revisions to migrate UP
             --down=<steps>                        Number of revisions to migrate DOWN (rollback)
             -d, --dry-run                         Dry run (print commands, but do not execute)
-        """ % (DBMAKE_CONFIG_FILE, DBMAKE_CONFIG_DIR)
+        """ % (DBMAKE_CONFIG_FILE, DBMAKE_CONFIG_DIR))
 
-    def _parse_options(self, args=[]):
+    def _parse_options(self, args):
 
         options = ['-m', '--migration-dir', '--migrations-dir=', '-c',
                    '--connection', '--connection=', '-r', '--revision', '--revision=',
@@ -523,7 +515,7 @@ class Migrate(BaseCommand):
         if len(args) > 0:
             raise BadCommandArguments
 
-        print self.__repr__()
+        print(self.__repr__())
 
     def __repr__(self):
         return "conn_name=%s, migration_direction=%s, migration_steps=%s, target_revision=%s" % (
@@ -535,9 +527,6 @@ class Status(BaseCommand):
 
     connection_name = None
     migrations_dir = None
-
-    def __init__(self, args=[]):
-        BaseCommand.__init__(self, args)
 
     def execute(self):
 
@@ -554,25 +543,23 @@ class Status(BaseCommand):
             connections_configs = database.DbConnectionConfig.read_all(config_file)
 
         if connections_configs is False or connections_configs[0] is False:
-            print "Failed to read config file"
+            print("Failed to read config file")
             return FAILURE
 
         for db_connection_config in connections_configs:
             try:
                 db_adapter = database.DbAdapterFactory.create(db_connection_config)
             except psycopg2.OperationalError as e:
-                print "%s: Failed to connect database %s on host %s:%s, user: %s" % (
-                    db_connection_config.connection_name,
-                    db_connection_config.dbname,
-                    db_connection_config.host,
-                    db_connection_config.port,
-                    db_connection_config.user
-                )
-                #print e.message.decode()
+                print("%s: Failed to connect database %s on host %s:%s, user: %s" % (
+                        db_connection_config.connection_name,
+                        db_connection_config.dbname,
+                        db_connection_config.host,
+                        db_connection_config.port,
+                        db_connection_config.user
+                     ))
 
                 # Continue to a next connection
                 continue
-                #return FAILURE
 
             migrations_dao = migrations.MigrationsDao(db_adapter)
 
@@ -580,34 +567,33 @@ class Status(BaseCommand):
                 last_migration = migrations_dao.find_most_recent()
 
                 if last_migration is None:
-                    print "%s: No migrations" % db_connection_config.connection_name
+                    print("%s: No migrations" % db_connection_config.connection_name)
                 else:
-                    print "%s: Revision %s" % (
-                        db_connection_config.connection_name,
-                        last_migration.revision
-                    )
+                    print("%s: Revision %s" % (
+                            db_connection_config.connection_name,
+                            last_migration.revision
+                         ))
             else:
-                print "%s: Error! No migrations table were found." % db_connection_config.connection_name
+                print("%s: Error! No migrations table were found." % db_connection_config.connection_name)
 
             db_adapter.disconnect()
 
         return SUCCESS
 
-    @staticmethod
-    def print_help():
-        print """
-        usage: dbmake status [options]
+    def print_help(self):
+        print("""
+              usage: dbmake status [options]
 
-        Note:
-        If connection name is not provided, the command will check status for all connections
-        initialized in the migrations directory.
+              Note:
+              If connection name is not provided, the command will check status for all connections
+              initialized in the migrations directory.
 
-        Options:
-            -m, --migrations-dir    Where migrations reside
-            -c, --connection        Connection name to check status with
-        """
+              Options:
+                  -m, --migrations-dir    Where migrations reside
+                  -c, --connection        Connection name to check status with
+              """)
 
-    def _parse_options(self, args=[]):
+    def _parse_options(self, args):
 
         options = ['-m', '--migrations-dir', '--migrations-dir=', '-c', '--connection', '--connection=']
 
@@ -641,7 +627,7 @@ class Status(BaseCommand):
         if len(args) > 0:
             raise BadCommandArguments
 
-        print self.__repr__()
+        print(self.__repr__())
 
     def __repr__(self):
         return "(conn_name=%s)" % self.connection_name
@@ -653,9 +639,6 @@ class Forget(BaseCommand):
     migrations_dir = None
     force = False
 
-    def __init__(self, args=[]):
-        BaseCommand.__init__(self, args)
-
     def execute(self):
 
         if self.migrations_dir is None:
@@ -663,7 +646,7 @@ class Forget(BaseCommand):
 
         # Get database connection configuration
         if self.connection_name is None:
-            print "Error! Please provide a name of connection"
+            print("Error! Please provide a name of connection")
             return FAILURE
 
         config_file = self.migrations_dir + os.sep + DBMAKE_CONFIG_DIR + os.sep + DBMAKE_CONFIG_FILE
@@ -671,23 +654,23 @@ class Forget(BaseCommand):
         try:
             db_connection_config = database.DbConnectionConfig.read(config_file, self.connection_name)
         except IOError:
-            print "Error! Failed to read a config file."
+            print("Error! Failed to read a config file.")
             return FAILURE
 
         if db_connection_config is False:
-            print "Error! A connection with such a name doesn't exist."
+            print("Error! A connection with such a name doesn't exist.")
             return FAILURE
 
         try:
             db_adapter = database.DbAdapterFactory.create(db_connection_config)
         except psycopg2.OperationalError as e:
-            print "%s: Failed to connect database %s on host %s:%s, user: %s" % (
-                db_connection_config.connection_name,
-                db_connection_config.dbname,
-                db_connection_config.host,
-                db_connection_config.port,
-                db_connection_config.user
-            )
+            print("%s: Failed to connect database %s on host %s:%s, user: %s" % (
+                    db_connection_config.connection_name,
+                    db_connection_config.dbname,
+                    db_connection_config.host,
+                    db_connection_config.port,
+                    db_connection_config.user
+                 ))
             if self.force is True:
                 db_adapter = None
             else:
@@ -706,15 +689,14 @@ class Forget(BaseCommand):
         # Print a result message
         message = 'Connection "%s" has been forgotten.' % self.connection_name
         if self.force is True:
-            print message + ' Using force.'
+            print(message + ' Using force.')
         else:
-            print message
+            print(message)
 
         return SUCCESS
 
-    @staticmethod
-    def print_help():
-        print """
+    def print_help(self):
+        print("""
         usage: dbmake forget [(-m | --migrations-dir) <path>] <connection name> [options]
 
         Drops migrations table in database associated with <connection name> and removes
@@ -723,7 +705,7 @@ class Forget(BaseCommand):
         Options:
             -m, --migrations-dir    Where migrations reside
             -f, --force             Forget a connection even if a database is unreachable
-        """
+        """)
 
     def _parse_options(self, args):
 
@@ -753,7 +735,7 @@ class Forget(BaseCommand):
         if len(args) > 0:
             raise BadCommandArguments
 
-        print self.__repr__()
+        print(self.__repr__())
 
     def __repr__(self):
         return "(conn_name=%s)" % self.connection_name
@@ -765,13 +747,10 @@ class Rollback(BaseCommand):
     migrations_dir = None
     dry_run = False
 
-    def __init__(self, args=[]):
-        BaseCommand.__init__(self, args)
-
     def execute(self):
 
         if self.dry_run:
-            print "Running DRY"
+            print("Running DRY")
 
         if self.migrations_dir is None:
             self.migrations_dir = os.path.abspath(os.getcwd())
@@ -786,7 +765,7 @@ class Rollback(BaseCommand):
             connections_configs = database.DbConnectionConfig.read_all(config_file)
 
         if connections_configs is False or connections_configs[0] is False:
-            print "Failed to read config file"
+            print("Failed to read config file")
             return FAILURE
 
         migrations_manager = migrations.MigrationsManager(self.migrations_dir)
@@ -797,14 +776,14 @@ class Rollback(BaseCommand):
             try:
                 db_adapter = database.DbAdapterFactory.create(db_connection_config)
             except psycopg2.OperationalError as e:
-                print "%s: Failed to connect database %s on host %s:%s, user: %s" % (
-                    db_connection_config.connection_name,
-                    db_connection_config.db_name,
-                    db_connection_config.host,
-                    db_connection_config.port,
-                    db_connection_config.user
-                )
-                print e.message.decode()
+                print("%s: Failed to connect database %s on host %s:%s, user: %s" % (
+                        db_connection_config.connection_name,
+                        db_connection_config.db_name,
+                        db_connection_config.host,
+                        db_connection_config.port,
+                        db_connection_config.user
+                     ))
+                print(e.message.decode())
                 continue
 
             migrations_dao = migrations.MigrationsDao(db_adapter)
@@ -817,7 +796,8 @@ class Rollback(BaseCommand):
 
                 # Find target revision
                 if current_revision not in revisions:
-                    print "%s: Error! Current revision's migration wasn't found." % db_connection_config.connection_name
+                    print("%s: Error! Current revision's migration wasn't found."
+                          % db_connection_config.connection_name)
                     return FAILURE
                 else:
                     current_index = revisions.index(current_revision)
@@ -830,22 +810,21 @@ class Rollback(BaseCommand):
                         target_revision = revisions[current_index - 1]
 
                 # Migrate...
-                print "%s: Rolling back... (target revision:  %s)" % (
-                    db_connection_config.connection_name,
-                    target_revision
-                )
+                print("%s: Rolling back... (target revision:  %s)" % (
+                        db_connection_config.connection_name,
+                        target_revision
+                     ))
                 migrations_manager.migrate_to_revision(target_revision, db_adapter, self.dry_run)
-                print "-" * 20
+                print("-" * 20)
             else:
-                print "%s: Error! No migrations table has been found." % db_connection_config.connection_name
+                print("%s: Error! No migrations table has been found." % db_connection_config.connection_name)
 
             db_adapter.disconnect()
 
         return SUCCESS
 
-    @staticmethod
-    def print_help():
-        print """
+    def print_help(self):
+        print("""
         usage: dbmake rollback [(-m | --migrations-dir) <path>] [options]
 
         Note:
@@ -856,7 +835,7 @@ class Rollback(BaseCommand):
             -m, --migrations-dir    Where migrations reside
             -c, --conection         Connection name to rollback with a database
             -d, --dry-run           Dry run (print commands, but do not execute)
-        """
+        """)
 
     def _parse_options(self, args):
 
@@ -897,7 +876,7 @@ class Rollback(BaseCommand):
         if len(args) > 0:
             raise BadCommandArguments
 
-        print self.__repr__()
+        print(self.__repr__())
 
     def __repr__(self):
         return "(conn_name=%s)" % self.connection_name
@@ -909,16 +888,13 @@ class NewMigration(BaseCommand):
     migrations_dir = None
     create_only = False
 
-    def __init__(self, args=[]):
-        BaseCommand.__init__(self, args)
-
     def execute(self):
 
         if self.migrations_dir is None:
             self.migrations_dir = os.path.abspath(os.getcwd())
 
         if self.migration_name is None:
-            print "Error! Please provide a migration name"
+            print("Error! Please provide a migration name")
             return FAILURE
 
         migration_file_name = str(int(time.time())) + "_" + self.migration_name + ".sql"
@@ -926,15 +902,15 @@ class NewMigration(BaseCommand):
 
         # Check if file is already exists
         if os.path.exists(migration_file):
-            print "Error! %s is already exists." % migration_file
+            print("Error! %s is already exists." % migration_file)
             return FAILURE
 
         # Create a new migration file
         try:
             f = open(migration_file, 'w+')
         except IOError as e:
-            print "Failure"
-            print e.message.decode()
+            print("Failure")
+            print(e.message.decode())
             return FAILURE
         else:
             with f:
@@ -946,16 +922,15 @@ class NewMigration(BaseCommand):
                 import webbrowser
                 webbrowser.open(migration_file)
             except Exception as e:
-                print e.message.decode()
+                print(e.message.decode())
                 return FAILURE
 
-        print "Created: %s" % migration_file
+        print("Created: %s" % migration_file)
 
         return SUCCESS
 
-    @staticmethod
-    def print_help():
-        print """
+    def print_help(self):
+        print("""
         usage: dbmake new-migration ((-n | --name) <migration name>) [options]
 
         Note:
@@ -965,7 +940,7 @@ class NewMigration(BaseCommand):
         Options:
             -m, --migrations-dir    Where migrations reside
             -c, --create-only       Create a new migration file but don't open it in text editor
-        """
+        """)
 
     def _parse_options(self, args):
 
@@ -1020,9 +995,6 @@ class Create(BaseCommand):
     create_empty = False
     drop_existing = False
 
-    def __init__(self, args=[]):
-        BaseCommand.__init__(self, args)
-
     def execute(self):
 
         if self.migrations_dir is None:
@@ -1034,7 +1006,7 @@ class Create(BaseCommand):
 
         # Check that such a "new" connection name doesn't already exist
         if database.DbConnectionConfig.is_connection_name_exists(config_file, self.new_connection_name):
-            print "Error! Connection name %s already exists." % self.new_connection_name
+            print("Error! Connection name %s already exists." % self.new_connection_name)
             return FAILURE
 
         # Get auxiliary database connection
@@ -1042,7 +1014,7 @@ class Create(BaseCommand):
             use_db_connection_config = database.DbConnectionConfig.read(config_file, self.use_connection_name)
 
             if use_db_connection_config is False:
-                print "Error! Failed to read the '%s' connection config" % self.use_connection_name
+                print("Error! Failed to read the '%s' connection config" % self.use_connection_name)
                 return FAILURE
         else:
             use_db_connection_config = database.DbConnectionConfig(
@@ -1085,15 +1057,15 @@ class Create(BaseCommand):
             try:
                 db_adapter = database.DbAdapterFactory.create(db_connection_config)
             except psycopg2.OperationalError as e:
-                print "Failed to connect to a database server with specified parameters."
-                print e.message.decode()
+                print("Failed to connect to a database server with specified parameters.")
+                print(e.message.decode())
                 return FAILURE
 
             migrations_manager = migrations.MigrationsManager(migrations_dir)
             result = migrations_manager.migrate_to_revision(migrations_manager.latest_revision(), db_adapter)
 
             if not result:
-                print "Error! Failed to migrate..."
+                print("Error! Failed to migrate...")
                 return FAILURE
 
         # Save newly created database connection details
@@ -1101,9 +1073,8 @@ class Create(BaseCommand):
 
         return SUCCESS
 
-    @staticmethod
-    def print_help():
-        print """
+    def print_help(self):
+        print("""
         usage: dbmake create ((-c | --connection-name) <new connection name> (-d | --dbname) <new database name> (-U | --use-connection) <connection name> [options]
            or: dbmake create ((-c | --connection-name) <new connection name> (-d | --dbname) <new database name> (-h | --host) <database host>
                     (-D | --use-dbname) <database name> (-u | --user) <username>  (-P | --password) <password>) [options]
@@ -1134,7 +1105,7 @@ class Create(BaseCommand):
         Required options:
             -c, --connection-name   Connection name for a new database
             -d, --dbname            New database name
-        """
+        """)
 
     def _parse_options(self, args):
 
@@ -1298,12 +1269,12 @@ class Create(BaseCommand):
         ):
             raise BadCommandArguments
 
-        self.__repr__();
+        self.__repr__()
 
     def __repr__(self):
-        print "new_conn_name=%s, new_db_name=%s, use_conn_name=%s" % (
-            self.new_connection_name, self.new_dbname, self.use_connection_name
-        )
+        print("new_conn_name=%s, new_db_name=%s, use_conn_name=%s" % (
+                self.new_connection_name, self.new_dbname, self.use_connection_name
+             ))
 
 
 class DocGenerate(BaseCommand):
@@ -1313,9 +1284,6 @@ class DocGenerate(BaseCommand):
     migrations_dir = None
     destination = None
 
-    def __init__(self, args=[]):
-        BaseCommand.__init__(self, args)
-
     def execute(self):
 
         if self.migrations_dir is None:
@@ -1324,7 +1292,7 @@ class DocGenerate(BaseCommand):
             if os.path.exists(self.migrations_dir):
                 migrations_dir = self.migrations_dir
             else:
-                print "Error! %s  DOESN'T EXIST!" % self.migrations_dir
+                print("Error! %s  DOESN'T EXIST!" % self.migrations_dir)
                 return FAILURE
 
         if self.destination is None:
@@ -1337,12 +1305,12 @@ class DocGenerate(BaseCommand):
             if os.path.exists(self.destination):
                 destination = self.destination
             else:
-                print "Error! %s  DOESN'T EXIST!" % self.migrations_dir
+                print("Error! %s  DOESN'T EXIST!" % self.migrations_dir)
                 return FAILURE
 
         config_file = migrations_dir + os.sep + DBMAKE_CONFIG_DIR + os.sep + DBMAKE_CONFIG_FILE
         if not os.path.exists(config_file):
-            print "Error! Can't find dbmake configuration file."
+            print("Error! Can't find dbmake configuration file.")
             return FAILURE
 
         # Get database adapter
@@ -1357,7 +1325,7 @@ class DocGenerate(BaseCommand):
 
         # Check that destination directory doesn't contain such a document as the generated documentation
         if os.path.exists(documentation_file) > 0:
-            print "Error! Documentation file %s already exists in the destination directory." % documentation_file_name
+            print("Error! Documentation file %s already exists in the destination directory." % documentation_file_name)
             return FAILURE
 
         # Generate documentation
@@ -1369,8 +1337,8 @@ class DocGenerate(BaseCommand):
         try:
             f = open(documentation_file, 'w+')
         except IOError as e:
-            print "Failure"
-            print e.message.decode()
+            print("Failure")
+            print(e.message.decode())
             return False
         else:
             with f:
@@ -1378,17 +1346,16 @@ class DocGenerate(BaseCommand):
 
         return SUCCESS
 
-    @staticmethod
-    def print_help():
-        print """
+    def print_help(self):
+        print("""
         usage: dbmake doc-generate (-c | --connection-name) <connection name> [options]
 
         Options:
             -m, --migrations-dir    Where migrations reside
             -d, --destination       Where to save generated documentation [Default: "<migrations dir>/doc"]
-        """
+        """)
 
-    def _parse_options(self, args=[]):
+    def _parse_options(self, args):
 
         if len(args) == 0:
             raise BadCommandArguments
@@ -1436,7 +1403,7 @@ class DocGenerate(BaseCommand):
             elif args[0] not in options:
                 raise BadCommandArguments
 
-        print self.__repr__()
+        print(self.__repr__())
 
     def __repr__(self):
         return "conn_name=%s" % self.connection_name
