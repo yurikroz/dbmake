@@ -25,7 +25,7 @@ class DbConnectionConfig:
     connection_name = None
     # db_type = DbType.POSTGRES
 
-    def __init__(self, host, dbname, user, password, connection_name, port="5432"):
+    def __init__(self, host, dbname, user, password, connection_name, port="5432", db_type=DbType.POSTGRES):
         self.host = host
         self.port = port
         self.dbname = dbname
