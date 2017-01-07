@@ -1,9 +1,10 @@
 #!/usr/bin/python
 
 import sys
-from common import FAILURE, SUCCESS
-from dbmake_cli import get_command, print_help, get_command_class_reference
-from common import CommandNotExists, BadCommandArguments, DBMAKE_VERSION
+
+from .common import FAILURE, SUCCESS
+from .dbmake_cli import get_command, print_help, get_command_class_reference
+from .common import CommandNotExists, BadCommandArguments, DBMAKE_VERSION
 
 
 class App:
@@ -30,7 +31,7 @@ class App:
                     command_class = get_command_class_reference(command_name)
                     command_class.print_help()
                 except AttributeError:
-                    print "Error! No such a command %s" % command_name
+                    print("Error! No such a command %s" % command_name)
                     print_help()
                     return FAILURE
                 return SUCCESS
@@ -38,7 +39,7 @@ class App:
                 print_help()
                 return SUCCESS
         elif command_name == '-v' or command_name == '--version':
-            print DBMAKE_VERSION
+            print(DBMAKE_VERSION)
             return SUCCESS
 
         # Get a command instance to execute and execute it
@@ -46,11 +47,11 @@ class App:
             command = get_command(command_name, args)
             result = command.execute()
         except CommandNotExists:
-            print "Unrecognized command!"
+            print("Unrecognized command!")
             print_help()
             return FAILURE
         except BadCommandArguments:
-            print "Bad command arguments"
+            print("Bad command arguments")
             return FAILURE
 
         return result
@@ -62,4 +63,3 @@ def main(argv=sys.argv):
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv))
-

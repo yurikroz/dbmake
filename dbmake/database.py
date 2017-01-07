@@ -41,12 +41,12 @@ class DbConnectionConfig:
         """
 
         def create_config_file(file_, content_):
-            print "Create config file... ",
+            print("Create config file... ")
             try:
                 f_ = open(file_, 'w+')
             except IOError as e_:
-                print "Failure"
-                print e_.message.decode()
+                print("Failure")
+                print(e_.message.decode())
                 return False
             else:
                 with f_:
@@ -56,18 +56,18 @@ class DbConnectionConfig:
         connections_list = [self]
         config_string = json.dumps(connections_list, default=lambda o: o.__dict__, sort_keys=True, indent=4)
 
-        print "Check if dbmake config file exists... ",
+        print("Check if dbmake config file exists... ")
 
         if not os.path.exists(config_file):
             # Create dbmake configuration file if such not exists
-            print "Not exists"
+            print("Not exists")
             create_config_file(config_file, config_string)
 
         else:
-            print "Exists"
+            print("Exists")
             connections_list = self.connections_list(config_file)
 
-            print "Check if such connection is already exists... ",
+            print("Check if such connection is already exists... ")
 
             for connection in connections_list:
                 if (
@@ -77,18 +77,18 @@ class DbConnectionConfig:
                         and connection["dbname"] == self.dbname
                     )
                 ):
-                    print "Connection is already exists."
+                    print("Connection is already exists.")
                     return False
 
-            print "No"
-            print "Add new connection to a config file...",
+            print("No")
+            print("Add new connection to a config file...")
 
             # Add new connection to a config file
             try:
                 f = open(config_file, 'w+')
             except IOError as e:
-                print "Failure"
-                print e.message.decode()
+                print("Failure")
+                print(e.message.decode())
                 return False
             else:
                 with f:
@@ -96,7 +96,7 @@ class DbConnectionConfig:
                     config_string = json.dumps(connections_list, default=lambda o: o.__dict__, sort_keys=True, indent=4)
                     f.write(config_string)
 
-            print "OK"
+            print("OK")
 
         return True
 
@@ -140,6 +140,7 @@ class DbConnectionConfig:
         """
         Reads a database connections configuration file and returns a list
         of database connections as a list of dictionaries
+        :param connection_name: Connection name
         :param config_file: A full path to a config file
         :return: List of dictionaries or False on failure
         """
@@ -333,7 +334,7 @@ class PgAdapter(BaseDbAdapter):
 
     def fetch_single_dict(self, sql_string):
         """
-        Executes an SQL string and returns tthe only record represented by dictionary
+        Executes an SQL string and returns the only record represented by dictionary
         :param sql_string: str
         """
         with self._connection.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:

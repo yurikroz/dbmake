@@ -1,12 +1,10 @@
-import logging
-import sys
 import os
-import traceback
 import psycopg2
-from common import DbmakeException, MIGRATIONS_TABLE, SUCCESS, FAILURE
-from database import DbConnectionConfig, DbAdapterFactory, DbType
-import migrations
-from doc_generator import DbSchemaType, DocGenerator, TableType, ColumnType
+
+from . import migrations
+from .common import DbmakeException, MIGRATIONS_TABLE, FAILURE
+from .database import DbConnectionConfig, DbAdapterFactory, DbType
+from .doc_generator import DbSchemaType, DocGenerator, TableType, ColumnType
 
 
 class BaseDbTask:
@@ -76,8 +74,6 @@ class PgDbTasksFactory(BaseDbTasksFactory):
     """
     A database tasks factory, produces PostgreSQL database tasks instances
     """
-    def __init__(self):
-        pass
 
     @classmethod
     def create(cls, task_name, db_connection_config, db_adapter=None):
@@ -106,9 +102,9 @@ class PgDbInit(BaseDbTask):
         """
         Initiates dbmake necessary table/s within a PostgreSQL database
         """
-        print "PgDbInit START"
+        print("PgDbInit START")
 
-        def _create_migrations_table(db_adapter):
+        def _create_migrations_table():
             query = """
             CREATE TABLE %s (
                 id SERIAL,
@@ -122,13 +118,13 @@ class PgDbInit(BaseDbTask):
         migrations_dao = migrations.MigrationsDao(self.db_adapter)
 
         if migrations_dao.is_migration_table_exists() is True:
-            print "Error! Migrations table is already exists"
-            print "DbInit FINISH"
+            print("Error! Migrations table is already exists")
+            print("DbInit FINISH")
             return False
 
-        print "Creating migrations table"
-        _create_migrations_table(self.db_adapter)
-        print "PgDbInit FINISH"
+        print("Creating migrations table")
+        _create_migrations_table()
+        print("PgDbInit FINISH")
 
         return True
 
@@ -145,7 +141,7 @@ class PgDbDumpZeroMigration(BaseDbTask):
         """
         Initiates dbmake necessary table/s within a PostgreSQL database
         """
-        print "PgDbDumpZeroMigration START"
+        print("PgDbDumpZeroMigration START")
 
         # Dump initial database structure into ZERO-MIGRATION (initial migration) file
         result = os.system(
@@ -160,7 +156,7 @@ class PgDbDumpZeroMigration(BaseDbTask):
             )
         )
 
-        print "PgDbDumpZeroMigration FINISH"
+        print("PgDbDumpZeroMigration FINISH")
 
         if result == FAILURE:
             return False
@@ -178,7 +174,7 @@ class PgDbCreate(BaseDbTask):
 
     def execute(self, dbname, drop_existing=False):
 
-        print self.__class__.__name__ + " BEGIN"
+        print(self.__class__.__name__ + " BEGIN")
 
         self.db_adapter.set_isolation_level(0)
 
@@ -186,29 +182,29 @@ class PgDbCreate(BaseDbTask):
             try:
                 self._drop_db(dbname)
             except psycopg2.ProgrammingError as e:
-                print e.message.decode()
+                print(e.message.decode())
                 return False
 
         try:
             self._create_db(dbname)
         except psycopg2.ProgrammingError as e:
-            print e.message.decode()
+            print(e.message.decode())
             return False
 
-        print self.__class__.__name__ + " FINISH"
+        print(self.__class__.__name__ + " FINISH")
 
         return True
 
     # ----------------------------------------------------------
     def _create_db(self, dbname):
-        print "Creating database %s" % dbname
+        print("Creating database %s" % dbname)
         cursor = self.db_adapter.get_cursor()
         cursor.execute("CREATE DATABASE %s;" % dbname)
         self.db_adapter.commit()
 
     # ----------------------------------------------------------
     def _drop_db(self, dbname):
-        print "Dropping database %s" % dbname
+        print("Dropping database %s" % dbname)
         cursor = self.db_adapter.get_cursor()
         cursor.execute("DROP DATABASE %s;" % dbname)
         self.db_adapter.commit()
@@ -227,14 +223,13 @@ class PgDbDocGenerate(BaseDbTask):
         Generates database documentation with a specified doc_generator_. If the latter is not specified
         then will use a default generator.
         """
-        import sys
-        print self.__class__.__name__ + " BEGIN"
+        print(self.__class__.__name__ + " BEGIN")
 
         db_schema = self._db_schema(dbname, revision)
         doc_generator_ = DocGenerator(db_schema)
         html = doc_generator_.generate()
 
-        print self.__class__.__name__ + " FINISH"
+        print(self.__class__.__name__ + " FINISH")
 
         return html
 

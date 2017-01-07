@@ -8,9 +8,8 @@ TODO:
 Implement "reset" command (Drop a database, recreate it and load the recent schema revision into it.)
 """
 
-import helper
-import commands
-from common import BadCommandArguments, CommandNotExists
+from . import helper, commands
+from .common import BadCommandArguments, CommandNotExists
 
 
 def command_to_class_name(command_name):
@@ -46,12 +45,17 @@ def get_command_class_reference(command_name):
         raise CommandNotExists
 
 
-def get_command(command_name, args=[]):
+def get_command(command_name, args=None):
     """
     Returns Application command instance corresponding to a passed command_name.
 
+    :param args: Command arguments list
+
     :param str command_name: Command name as it has been parsed from sys.argv
     """
+
+    if args is None:
+        args = []
 
     command_class_reference = get_command_class_reference(command_name)
 
@@ -84,7 +88,7 @@ def get_command(command_name, args=[]):
 
 
 def print_help():
-    print """
+    print("""
     dbmake - Database Schema Migration Tool
 
     usage: dbmake <command> [options]
@@ -100,4 +104,4 @@ def print_help():
          create             Create a new empty database and initializes migrations subsystem in it.
          new-migration      Create a new migration file
          doc-generate       Generate a database documentation
-    """
+    """)

@@ -1,7 +1,7 @@
-
 import os
 import re
-import common
+
+from . import common
 
 
 class MigrationVO:
@@ -141,7 +141,6 @@ class Migration:
         self.revision = int(result.group('revision'))
         self.name = result.group('name')
 
-
         # print "Name: %s" % self.name
         # print "Revision: %s" % self.revision
         # print "Content:"
@@ -211,7 +210,6 @@ class MigrationsManager:
         :param target_revision: Migration revision to migrate to
         :return:
         """
-        revision = int(target_revision)
         migrations = self._migrations_list()
 
         if len(migrations) == 0:
@@ -230,7 +228,7 @@ class MigrationsManager:
             if migrations[0].revision != 0:
                 raise common.DbmakeException("Error! No ZERO-MIGRATION was found in %s" % self._migrations_dir)
 
-            print "Migrating up to revision: 0...",
+            print("Migrating up to revision: 0...")
 
             if not dry_run:
                 # result = migrations[0].migrate(self._db_adapter)
@@ -240,12 +238,12 @@ class MigrationsManager:
                     migrations_dao.create(migrations[0].get_vo())
                     current_revision = 0
                 else:
-                    print "Failure"
+                    print("Failure")
                     raise common.DbmakeException("Error! Failed to migrate to revision %s" % str(migrations[0].revision))
             else:
                 current_revision = 0
 
-            print "OK"
+            print("OK")
             applied_zero_migration = True
         else:
             current_revision = int(migration_vo.revision)
@@ -269,27 +267,27 @@ class MigrationsManager:
 
         if current_index == target_index:
             if not applied_zero_migration:
-                print "Current revision is already equals to target revision"
+                print("Current revision is already equals to target revision")
             return True
 
         elif (target_index - current_index) > 0:
             for i in range(current_index + 1, target_index + 1, 1):
-                print "Migrating up to revision: %s..." % str(migrations[i].revision),
+                print("Migrating up to revision: %s..." % str(migrations[i].revision))
 
                 if not dry_run:
                     # migrations[i].migrate(self._db_adapter)
                     migrations[i].migrate(db_adapter)
                     migrations_dao.create(migrations[i].get_vo())
-                print "OK"
+                print("OK")
         else:
             for i in range(current_index, target_index, -1):
-                print "Migrating down to revision: %s..." % str(migrations[i-1].revision),
+                print("Migrating down to revision: %s..." % str(migrations[i-1].revision))
 
                 if not dry_run:
                     # migrations[i].rollback(self._db_adapter)
                     migrations[i].rollback(db_adapter)
                     migrations_dao.create(migrations[i-1].get_vo())
-                print "OK"
+                print("OK")
 
         return True
 
